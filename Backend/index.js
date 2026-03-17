@@ -9,6 +9,7 @@ require('./config/redis'); // Triggers connection to Redis immediately
 
 // Import App Routes
 const healthRoutes = require('./Routes/health.route');
+const scraperRoutes = require('./Routes/scraper.route');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +34,7 @@ app.use((req, res, next) => {
 // Route Mounting
 // =======================
 app.use('/health', healthRoutes);
+app.use('/scraper', scraperRoutes);
 
 // Fallback Route
 app.get('/', (req, res) => {

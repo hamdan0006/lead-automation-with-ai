@@ -11,15 +11,42 @@ datasource db {
 
 
 model Lead {
-  id        Int      @id @default(autoincrement())
-  name      String?
-  email     String   @unique
-  phone     String?
-  company   String?
-  source    String?
-  status    String   @default("NEW")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+
+  // Basic Info (from Maps)
+  name          String?
+  address       String?
+  website       String?
+  hasWebsite    Boolean?
+  phone         String?
+
+  // Enriched Info
+  email         String?  @unique
+  company       String?
+  linkedinUrl   String?
+
+  // Location
+  country       String?
+  state         String?
+  city          String?
+  area          String?
+
+  // System Fields
+  source        String?   // google_maps, website, apollo
+  status        String    @default("NEW")
+  icpScore      Float?
+
+  // Pipeline Tracking
+  mapsScraped       Boolean @default(false)
+  websiteVisited    Boolean @default(false)
+  emailExtracted    Boolean @default(false)
+  contacted         Boolean @default(false)
+
+  // Deduplication Key
+  uniqueKey     String? @unique
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@map("leads")
 }
