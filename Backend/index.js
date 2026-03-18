@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config(); // Must be FIRST — db.js reads process.env.DATABASE_URL at module load time
 const express = require('express');
 const cors = require('cors');
 

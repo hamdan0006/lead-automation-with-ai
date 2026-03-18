@@ -2,11 +2,13 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 
@@ -19,7 +21,8 @@ model Lead {
   website       String?
   hasWebsite    Boolean?
   phone         String?
-
+  keyword       String?
+  
   // Enriched Info
   email         String?  @unique
   company       String?
@@ -47,6 +50,9 @@ model Lead {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  
+  scrapingJobId Int?
+  scrapingJob   ScrapingJob? @relation(fields: [scrapingJobId], references: [id])
 
   @@map("leads")
 }
@@ -56,6 +62,9 @@ model ScrapingJob {
   url       String
   status    String   @default("PENDING")
   results   Int      @default(0)
+
+  leads     Lead[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

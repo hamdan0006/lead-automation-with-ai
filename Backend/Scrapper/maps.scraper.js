@@ -12,8 +12,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /**
  * Background Google Maps Scraper
  * @param {string} query - The search query (e.g. "real estate agents in Miami")
+ * @param {number} scrapingJobId - The ID of the database record tracking this job
  */
-const runMapsScraper = async (query) => {
+const runMapsScraper = async (query, scrapingJobId) => {
   let browser = null;
   try {
     logger.info(`🗺️ Starting Google Maps background scraper for: "${query}"`);
@@ -48,6 +49,9 @@ const runMapsScraper = async (query) => {
 
     // Phase 1: Scroll and collect listing URLs
     logger.info(`📜 Beginning scrolling phase...`);
+    let lastFoundCount = 0;
+    let idleScrolls = 0;
+
     while (extractedLinks.size < targetLeadCount) {
       // 1. Randomized scroll steps
       const stepSize = getRandomInt(rules.scroll.step.min, rules.scroll.step.max);
@@ -59,29 +63,28 @@ const runMapsScraper = async (query) => {
 
       scrollCount++;
 
-      // 2. User Interaction Simulation - Random Mouse Movements over the feed
-      if (Math.random() > 0.5) { // 50% chance to simulate user moving mouse
-        const randomX = getRandomInt(100, 400); // within the side panel roughly
+      // 2. User Interaction Simulation - Random Mouse Movements and Clicks over the feed
+      if (Math.random() > 0.6) { // Reduced frequency of mouse activity to keep scrolling efficient
+        const randomX = getRandomInt(100, 400); 
         const randomY = getRandomInt(200, 800);
-        await page.mouse.move(randomX, randomY, { steps: getRandomInt(5, 15) });
+        await page.mouse.move(randomX, randomY, { steps: 5 });
+        
+        // Occasional human-like "focus click" on empty space in feed
+        if (Math.random() > 0.85) {
+          await page.mouse.click(randomX, randomY);
+        }
       }
 
-      // Short Delay (2-5 seconds random)
-      const shortDelayMs = getRandomInt(rules.scroll.shortDelay.min, rules.scroll.shortDelay.max);
-      await sleep(shortDelayMs);
+      // Variable Delay 
+      await sleep(getRandomInt(rules.scroll.shortDelay.min, rules.scroll.shortDelay.max));
 
       // Check for Long Pause
       if (scrollCount >= nextLongPauseAt) {
-        // 3. Unpredictability: Sometimes skip the long pause randomly (20% chance to skip)
-        if (Math.random() > 0.2) {
+        if (Math.random() > 0.4) { // Only do long pauses 60% of the time to keep things moving
           const longPauseMs = getRandomInt(rules.scroll.longPause.min, rules.scroll.longPause.max);
-          logger.info(`⏳ Triggering occasional long human-like pause: ${longPauseMs / 1000} seconds...`);
+          logger.info(`⏳ Human-like pause: ${longPauseMs / 1000}s...`);
           await sleep(longPauseMs);
-        } else {
-          logger.info(`⚡ Randomly skipping long pause to simulate unpredictable behavior.`);
         }
-        
-        // Reset scroll counter and determine next threshold
         scrollCount = 0;
         nextLongPauseAt = getRandomInt(rules.scroll.triggerLongPauseAfter.min, rules.scroll.triggerLongPauseAfter.max);
       }
@@ -93,11 +96,21 @@ const runMapsScraper = async (query) => {
       });
 
       newLinks.forEach(link => extractedLinks.add(link));
+
+      // 🛑 END OF LIST DETECTION
+      if (extractedLinks.size === lastFoundCount) {
+        idleScrolls++;
+        if (idleScrolls > 8) { // If we've scrolled 8 times and found nothing new, we're likely at the end
+          logger.info(`🏁 Bottom of list reached or no more leads found. Moving to extraction.`);
+          break;
+        }
+      } else {
+        lastFoundCount = extractedLinks.size;
+        idleScrolls = 0; // Reset if we found something new
+      }
       
-      // Stop if end of list is reached (no height changes)
-      // For brevity, we assume we just break if we have enough.
-      if (extractedLinks.size >= targetLeadCount) {
-        break;
+      if (extractedLinks.size % 20 === 0 && extractedLinks.size !== 0) {
+        logger.info(`📊 Progress: Collected ${extractedLinks.size} listing URLs...`);
       }
     }
 
@@ -113,10 +126,21 @@ const runMapsScraper = async (query) => {
     for (const url of finalLinksToScrape) {
       const detailPage = await browser.newPage();
       try {
+        // Human Simulation: Click on the item from the feed view (if we were on the main page)
+        // Since we are opening a new page for each detail (to keep state clean), 
+        // we will simulate the behavior of a user "opening in a new tab" via clicking.
+        
         await detailPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         
-        // Minor wait for details to populate
-        await sleep(getRandomInt(1000, 3000));
+        // Simulating a user "clicking" and "hovering" on the page once it loads
+        if (Math.random() > 0.4) {
+          await detailPage.mouse.move(getRandomInt(100, 600), getRandomInt(100, 600), { steps: 10 });
+          // Click on the name or empty space to simulate focus
+          await detailPage.click('h1').catch(() => {});
+        }
+
+        // Minor wait for details to populate - more variable duration
+        await sleep(getRandomInt(2000, 5000));
 
         // Data Extraction
         const leadData = await detailPage.evaluate(() => {
@@ -153,9 +177,12 @@ const runMapsScraper = async (query) => {
               website: leadData.website,
               hasWebsite: !!leadData.website,
               phone: leadData.phone,
+              keyword: query, // 👈 SAVE THE SEARCH QUERY AS THE KEYWORD
               source: 'google_maps',
               mapsScraped: true,
               uniqueKey: uniqueKey,
+              // Link to the job
+              scrapingJobId: scrapingJobId,
               // Parsed location fields
               area,
               city,
@@ -176,6 +203,18 @@ const runMapsScraper = async (query) => {
     }
 
     logger.info(`🎉 Scraper job completed! Successfully saved ${successCount} leads to DB.`);
+
+    // 3. Finalize Job Status in the Database
+    if (scrapingJobId) {
+      await prisma.scrapingJob.update({
+        where: { id: scrapingJobId },
+        data: {
+          status: 'COMPLETED',
+          results: successCount
+        }
+      });
+      logger.info(`✅ Updated Scraping Job ${scrapingJobId} status to COMPLETED.`);
+    }
 
   } catch (error) {
     logger.error(`❌ Fatal Error in Google Maps Scraper: ${error.message}`);

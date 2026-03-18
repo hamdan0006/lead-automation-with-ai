@@ -8,12 +8,11 @@
     "dev": "node --watch index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@prisma/adapter-pg": "^7.5.0",
-    "@prisma/client": "^7.5.0",
+    "@prisma/adapter-pg": "5.22.0",
+    "@prisma/client": "5.22.0",
     "axios": "^1.13.6",
     "bull": "^4.16.5",
     "cheerio": "^1.2.0",
@@ -31,6 +30,6 @@
     "validator": "^13.15.26"
   },
   "devDependencies": {
-    "prisma": "^7.5.0"
+    "prisma": "5.22.0"
   }
 }

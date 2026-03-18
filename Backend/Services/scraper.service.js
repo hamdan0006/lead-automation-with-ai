@@ -2,6 +2,8 @@ const puppeteer = require('puppeteer');
 const logger = require('../utils/logger');
 const { runMapsScraper } = require('../Scrapper/maps.scraper');
 
+const { prisma } = require('../config/db');
+
 const performPuppeteerVerification = async () => {
   let browser = null;
   try {
@@ -33,11 +35,34 @@ const performPuppeteerVerification = async () => {
   }
 };
 
-const startMapsBackgroundScraping = (query) => {
-  // Run scraper in the background
-  runMapsScraper(query).catch(err => {
-    logger.error(`Background scraper failed entirely: ${err.message}`);
-  });
+const startMapsBackgroundScraping = async (query) => {
+  try {
+    // 1. Create a Scraping Job record to track progress
+    const job = await prisma.scrapingJob.create({
+      data: {
+        url: `https://www.google.com/maps/search/${encodeURIComponent(query)}/`,
+        status: 'PROCESSING',
+        results: 0
+      }
+    });
+
+    logger.info(`📝 Created Scraping Job ID: ${job.id} for query: "${query}"`);
+
+    // 2. Run scraper in the background and pass the Job ID
+    runMapsScraper(query, job.id).catch(async (err) => {
+      logger.error(`Background scraper failed entirely for Job ${job.id}: ${err.message}`);
+      // Update job status to FAILED
+      await prisma.scrapingJob.update({
+        where: { id: job.id },
+        data: { status: 'FAILED' }
+      }).catch(() => {});
+    });
+
+    return job;
+  } catch (error) {
+    logger.error(`Failed to initialize scraping job: ${error.message}`);
+    throw error;
+  }
 };
 
 module.exports = {

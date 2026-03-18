@@ -28,11 +28,12 @@ const triggerMapsScraper = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Query is required.' });
     }
 
-    scraperService.startMapsBackgroundScraping(query);
+    const job = await scraperService.startMapsBackgroundScraping(query);
 
     res.status(202).json({
       success: true,
-      message: `Google Maps background scraper started successfully for query: "${query}". You can check the logs for progress.`
+      message: `Google Maps background scraper started successfully for query: "${query}".`,
+      jobId: job.id
     });
   } catch (error) {
     logger.error(`Error starting maps scraper: ${error.message}`);
