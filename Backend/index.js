@@ -11,6 +11,10 @@ require('./config/redis'); // Triggers connection to Redis immediately
 const healthRoutes = require('./Routes/health.route');
 const scraperRoutes = require('./Routes/scraper.route');
 
+// Import Workers
+const { startEmailWorker } = require('./Worker/email.worker');
+const { startMailWorker } = require('./Worker/mail.worker');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -48,6 +52,10 @@ const startServer = async () => {
   // Wait for DB Connection before accepting requests
   await connectDB();
   
+  // Start BullMQ Workers
+  startEmailWorker();
+  startMailWorker();
+
   app.listen(PORT, () => {
     logger.info(`🚀 Server is running on http://localhost:${PORT}`);
   });
