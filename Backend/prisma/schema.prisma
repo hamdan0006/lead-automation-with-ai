@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
@@ -11,48 +8,33 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 model Lead {
-  id            Int      @id @default(autoincrement())
-
-  // Basic Info (from Maps)
-  name          String?
-  address       String?
-  website       String?
-  hasWebsite    Boolean?
-  phone         String?
-  keyword       String?
-  
-  // Enriched Info
-  email         String?  @unique
-  company       String?
-  linkedinUrl   String?
-
-  // Location
-  country       String?
-  state         String?
-  city          String?
-  area          String?
-
-  // System Fields
-  source        String?   // google_maps, website, apollo
-  status        String    @default("NEW")
-  icpScore      Float?
-
-  // Pipeline Tracking
-  mapsScraped       Boolean @default(false)
-  websiteVisited    Boolean @default(false)
-  emailExtracted    Boolean @default(false)
-  contacted         Boolean @default(false)
-
-  // Deduplication Key
-  uniqueKey     String? @unique
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  scrapingJobId Int?
-  scrapingJob   ScrapingJob? @relation(fields: [scrapingJobId], references: [id])
+  id             Int          @id @default(autoincrement())
+  name           String?
+  email          String?      @unique
+  phone          String?
+  company        String?
+  source         String?
+  status         String       @default("NEW")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  area           String?
+  city           String?
+  country        String?
+  linkedinUrl    String?
+  state          String?
+  icpScore       Float?
+  address        String?
+  contacted      Boolean      @default(false)
+  emailExtracted Boolean      @default(false)
+  mapsScraped    Boolean      @default(false)
+  uniqueKey      String?      @unique
+  website        String?
+  websiteVisited Boolean      @default(false)
+  hasWebsite     Boolean?
+  scrapingJobId  Int?
+  keyword        String?
+  scrapingJob    ScrapingJob? @relation(fields: [scrapingJobId], references: [id])
 
   @@map("leads")
 }
@@ -62,11 +44,20 @@ model ScrapingJob {
   url       String
   status    String   @default("PENDING")
   results   Int      @default(0)
-
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   leads     Lead[]
 
+  @@map("scraping_jobs")
+}
+
+model EmailTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  subject   String
+  body      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("scraping_jobs")
+  @@map("email_templates")
 }

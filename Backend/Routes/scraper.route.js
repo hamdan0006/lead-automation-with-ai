@@ -1,6 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { verifyPuppeteer, triggerMapsScraper, triggerEmailExtraction, triggerEmailOutreach } = require('../Controllers/scraper.controller');
+const { 
+  verifyPuppeteer, 
+  triggerMapsScraper, 
+  triggerEmailExtraction, 
+  triggerEmailOutreach,
+  listTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate
+} = require('../Controllers/scraper.controller');
 
 // GET /scraper/verify
 router.get('/verify', verifyPuppeteer);
@@ -13,5 +22,11 @@ router.post('/extract-emails', triggerEmailExtraction);
 
 // POST /scraper/send-emails
 router.post('/send-emails', triggerEmailOutreach);
+
+// Template Management
+router.get('/templates', listTemplates);
+router.post('/templates', createTemplate);
+router.put('/templates/:id', updateTemplate);
+router.delete('/templates/:id', deleteTemplate);
 
 module.exports = router;

@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { prisma } = require('../config/db');
 const scraperService = require('../Services/scraper.service');
 const emailQueueService = require('../Services/emailQueue.service');
 const mailService = require('../Services/mail.service');
@@ -65,12 +66,16 @@ const triggerEmailExtraction = async (req, res) => {
 
 const triggerEmailOutreach = async (req, res) => {
   try {
-    const { jobId } = req.body;
-    const enqueuedCount = await mailService.enqueueLeadsForOutreach(jobId);
+    const { jobId, templateIds } = req.body;
+    const enqueuedCount = await mailService.enqueueLeadsForOutreach(jobId, templateIds);
 
-    const message = jobId 
+    let message = jobId 
       ? `Successfully enqueued ${enqueuedCount} leads from job #${jobId} for outreach.`
       : `Successfully enqueued ${enqueuedCount} leads for outreach.`;
+
+    if (templateIds && templateIds.length > 0) {
+        message += ` Using templates: ${templateIds.join(', ')}`;
+    }
 
     res.status(202).json({
       success: true,
@@ -83,9 +88,78 @@ const triggerEmailOutreach = async (req, res) => {
   }
 };
 
+// =======================
+// Template Management
+// =======================
+
+const listTemplates = async (req, res) => {
+  try {
+    const templates = await prisma.emailTemplate.findMany();
+    res.status(200).json({ success: true, templates });
+  } catch (error) {
+    logger.error(`Error listing templates: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to list templates.' });
+  }
+};
+
+const createTemplate = async (req, res) => {
+  try {
+    const { name, subject, body } = req.body;
+    
+    if (!name || !subject || !body) {
+      return res.status(400).json({ success: false, message: 'Name, subject, and body are required.' });
+    }
+
+    const template = await prisma.emailTemplate.create({
+      data: { name, subject, body }
+    });
+
+    res.status(201).json({ success: true, message: 'Template created successfully.', template });
+  } catch (error) {
+    logger.error(`Error creating template: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to create template.', error: error.message });
+  }
+};
+
+const updateTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, subject, body } = req.body;
+
+    const template = await prisma.emailTemplate.update({
+      where: { id: parseInt(id) },
+      data: { name, subject, body }
+    });
+
+    res.status(200).json({ success: true, message: 'Template updated successfully.', template });
+  } catch (error) {
+    logger.error(`Error updating template: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to update template.', error: error.message });
+  }
+};
+
+const deleteTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await prisma.emailTemplate.delete({
+      where: { id: parseInt(id) }
+    });
+
+    res.status(200).json({ success: true, message: 'Template deleted successfully.' });
+  } catch (error) {
+    logger.error(`Error deleting template: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to delete template.', error: error.message });
+  }
+};
+
 module.exports = {
   verifyPuppeteer,
   triggerMapsScraper,
   triggerEmailExtraction,
-  triggerEmailOutreach
+  triggerEmailOutreach,
+  listTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate
 };

@@ -25,10 +25,26 @@ const startMailWorker = () => {
       }
 
       logger.info(`📧 Sending email to lead ${leadId}: ${email}`);
+      const { templateIds } = job.data;
 
       try {
-        // 1. Send the email
-        await sendEmail(email, leadName || 'there');
+        // Fetch full lead data to get company/name for templates
+        const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+        
+        if (!lead) {
+            logger.error(`Lead ${leadId} not found in database.`);
+            return;
+        }
+
+        // Randomly pick a template if an array was provided
+        let chosenTemplateId = null;
+        if (templateIds && templateIds.length > 0) {
+            chosenTemplateId = templateIds[Math.floor(Math.random() * templateIds.length)];
+            logger.info(`🎲 Picked template #${chosenTemplateId} from provided options for lead ${leadId}`);
+        }
+
+        // 1. Send the email with the full lead data and chosen template
+        await sendEmail(email, lead, chosenTemplateId);
 
         // 2. Update lead status to CONTACTED
         await prisma.lead.update({
