@@ -1,0 +1,37 @@
+.back-btn-container {
+    padding: 30px;
+    position: fixed;
+    top: 0;
+    left: 0;
+}
+
+.price-back-btn {
+    padding: 30px;
+    margin: 30px;
+}
+
+.back-btn {
+    position: relative;
+    padding: 10px 30px 10px 35px !important;
+    background: #e0e0e0;
+    border: 1px solid #c5c5c5;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease;
+    clip-path: polygon(12px 0%,
+            100% 0%,
+            100% 100%,
+            12px 100%,
+            0% 50%);
+}
+
+/* Hover */
+.back-btn:hover {
+    transform: scale(0.95);
+}
+
+/* Pressed */
+.back-btn:active {
+    transform: scale(0.9);
+}

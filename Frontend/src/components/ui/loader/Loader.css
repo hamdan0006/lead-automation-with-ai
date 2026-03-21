@@ -1,0 +1,193 @@
+/* Loader.css */
+
+.loader-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    /* Glassmorphism background */
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.dark .loader-container {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.loader-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.loader-title {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: var(--color-brand-500, #465fff);
+    letter-spacing: 1px;
+}
+
+.dark .loader-title {
+    color: white;
+}
+
+.loading-bar {
+    width: 268px;
+    /* Approx 11% reduction */
+    background: var(--color-gray-200, #cecece);
+    padding: 1.8px;
+    border: 1px solid var(--color-brand-500, #465fff);
+    border-radius: 5px;
+    /* Use hex with opacity for shadow if possible, or fallback to known brand RGBA */
+    box-shadow: 0 0 18px 0 rgba(70, 95, 255, 0.5);
+    margin: auto;
+}
+
+.dark .loading-bar {
+    background: var(--color-gray-800, #1d2939);
+}
+
+.loading-bar--progress {
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    align-content: center;
+}
+
+.loading-bar--progress span {
+    margin: auto;
+    background: var(--color-brand-500, #465fff);
+    border-radius: 3.5px;
+    flex-basis: 11%;
+    flex-grow: 1;
+    flex-shrink: 1;
+    height: 18px;
+    /* Using linear flow */
+    animation: FadeIn 0.5s ease;
+    transition: all 1s cubic-bezier(0.17, 0.67, 0.88, 0.17);
+}
+
+.loading-bar--progress span:first-of-type {
+    border-top-left-radius: 3.5px;
+    border-bottom-left-radius: 3.5px;
+}
+
+.loading-bar--progress span:last-of-type {
+    border-top-right-radius: 3.5px;
+    border-bottom-right-radius: 3.5px;
+}
+
+.loading-bar--progress .first {
+    border-top-left-radius: 3.5px !important;
+    border-bottom-left-radius: 3.5px !important;
+}
+
+.loading-bar--progress .last {
+    border-top-right-radius: 3.5px !important;
+    border-bottom-right-radius: 3.5px !important;
+}
+
+@keyframes FadeIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.1);
+        background: var(--color-brand-500, #465fff);
+        border-radius: 3.5px;
+    }
+
+    85% {
+        opacity: 1;
+        /* Removed gradient to ensure pure theme color */
+        background: var(--color-brand-500, #465fff);
+        border-radius: 0;
+        border-top-right-radius: 7px;
+        border-bottom-right-radius: 7px;
+    }
+
+    100% {
+        transform: scale(1);
+        /* Removed gradient to ensure pure theme color */
+        background: var(--color-brand-500, #465fff);
+        border-radius: 0;
+    }
+}
+
+/* Loop unrolled for animation delays */
+.loading-bar--progress span:nth-child(1) {
+    animation-delay: 0.15s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(2) {
+    animation-delay: 0.30s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(3) {
+    animation-delay: 0.45s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(4) {
+    animation-delay: 0.60s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(5) {
+    animation-delay: 0.75s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(6) {
+    animation-delay: 0.90s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(7) {
+    animation-delay: 1.05s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(8) {
+    animation-delay: 1.20s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(9) {
+    animation-delay: 1.35s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(10) {
+    animation-delay: 1.50s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(11) {
+    animation-delay: 1.65s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
+
+.loading-bar--progress span:nth-child(12) {
+    animation-delay: 1.80s;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+}
