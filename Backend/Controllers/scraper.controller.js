@@ -25,13 +25,13 @@ const verifyPuppeteer = async (req, res) => {
 
 const triggerMapsScraper = async (req, res) => {
   try {
-    const { query } = req.body;
+    const { query, leadType } = req.body;
     
     if (!query) {
       return res.status(400).json({ success: false, message: 'Query is required.' });
     }
 
-    const job = await scraperService.startMapsBackgroundScraping(query);
+    const job = await scraperService.startMapsBackgroundScraping(query, leadType);
 
     res.status(202).json({
       success: true,
@@ -153,6 +153,74 @@ const deleteTemplate = async (req, res) => {
   }
 };
 
+const getLeadsByJobId = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const { leadType } = req.query; // 👈 Extract from query
+
+    const skip = (page - 1) * limit;
+
+    // 👈 Build dynamic base filter
+    const whereClause = { scrapingJobId: parseInt(jobId) };
+    if (leadType) {
+      whereClause.leadType = leadType;
+    }
+
+    const [leads, totalCount] = await Promise.all([
+      prisma.lead.findMany({
+        where: whereClause, // 👈 Apply base filter
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.lead.count({
+        where: whereClause // 👈 Apply base filter
+      })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: leads,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        totalPages: Math.ceil(totalCount / limit)
+      }
+    });
+
+  } catch (error) {
+    logger.error(`Error fetching leads for job ${req.params.jobId}: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to fetch leads.' });
+  }
+};
+
+const getJobs = async (req, res) => {
+  try {
+    const jobs = await prisma.scrapingJob.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { leads: true }
+        }
+      }
+    });
+
+    const formattedJobs = jobs.map(job => ({
+      ...job,
+      results: job._count.leads, // Show actual leads saved instead of processed attempts
+      _count: undefined // Clean up payload
+    }));
+
+    res.status(200).json({ success: true, jobs: formattedJobs });
+  } catch (error) {
+    logger.error(`Error fetching jobs: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to fetch jobs.' });
+  }
+};
+
 module.exports = {
   verifyPuppeteer,
   triggerMapsScraper,
@@ -161,5 +229,7 @@ module.exports = {
   listTemplates,
   createTemplate,
   updateTemplate,
-  deleteTemplate
+  deleteTemplate,
+  getLeadsByJobId,
+  getJobs
 };

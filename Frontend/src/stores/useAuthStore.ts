@@ -65,12 +65,13 @@ const useAuthStore = create<AuthState>((set, get) => ({
             const data = await response.json();
 
             // Store tokens
-            localStorage.setItem('accessToken', data.data.accessToken);
-            localStorage.setItem('refreshToken', data.data.refreshToken);
+            if (data.token) {
+                localStorage.setItem('accessToken', data.token);
+            }
 
             set({
-                user: data.data.user,
-                token: data.data.accessToken,
+                user: data.user,
+                token: data.token,
                 isAuthenticated: true,
                 isLoading: false,
             });
@@ -137,12 +138,11 @@ const useAuthStore = create<AuthState>((set, get) => ({
             const data = await response.json();
 
             // Auto-login after register
-            if (data.data?.accessToken) {
-                localStorage.setItem('accessToken', data.data.accessToken);
-                localStorage.setItem('refreshToken', data.data.refreshToken);
+            if (data.token) {
+                localStorage.setItem('accessToken', data.token);
                 set({
-                    user: data.data.user,
-                    token: data.data.accessToken,
+                    user: data.user,
+                    token: data.token,
                     isAuthenticated: true,
                     isLoading: false,
                 });
@@ -172,7 +172,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
 
             if (response.ok) {
                 const data = await response.json();
-                set({ user: data.data.user });
+                set({ user: data.user });
             }
         } catch (error) {
             console.error('Error refreshing user data:', error);
@@ -212,14 +212,14 @@ const useAuthStore = create<AuthState>((set, get) => ({
             // 🔑 GUARD AGAINST SAME DATA
             if (
                 get().isAuthenticated &&
-                get().user?.id === data.data.user.id
+                get().user?.id === data.user.id
             ) {
                 set({ isLoading: false });
                 return;
             }
 
             set({
-                user: data.data.user,
+                user: data.user,
                 isAuthenticated: true,
                 token,
                 isLoading: false,

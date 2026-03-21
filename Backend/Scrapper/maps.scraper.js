@@ -13,8 +13,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Background Google Maps Scraper
  * @param {string} query - The search query (e.g. "real estate agents in Miami")
  * @param {number} scrapingJobId - The ID of the database record tracking this job
+ * @param {string} leadType - Tag for categorization (e.g., "Real estate")
  */
-const runMapsScraper = async (query, scrapingJobId) => {
+const runMapsScraper = async (query, scrapingJobId, leadType) => {
   let browser = null;
   try {
     logger.info(`🗺️ Starting Google Maps background scraper for: "${query}"`);
@@ -178,6 +179,7 @@ const runMapsScraper = async (query, scrapingJobId) => {
               hasWebsite: !!leadData.website,
               phone: leadData.phone,
               keyword: query, // 👈 SAVE THE SEARCH QUERY AS THE KEYWORD
+              leadType: leadType || null,
               source: 'google_maps',
               mapsScraped: true,
               uniqueKey: uniqueKey,
@@ -190,6 +192,14 @@ const runMapsScraper = async (query, scrapingJobId) => {
               country
             }
           });
+
+          // 📈 Real-time Progress Update: Increment the results count in the ScrapingJob table
+          if (scrapingJobId) {
+            await prisma.scrapingJob.update({
+              where: { id: scrapingJobId },
+              data: { results: { increment: 1 } }
+            }).catch(() => {}); // Silent failure for non-critical counter
+          }
 
           logger.info(`✅ Saved Lead: ${leadData.name} | ${city}, ${state}, ${country}`);
           successCount++;
@@ -209,8 +219,8 @@ const runMapsScraper = async (query, scrapingJobId) => {
       await prisma.scrapingJob.update({
         where: { id: scrapingJobId },
         data: {
-          status: 'COMPLETED',
-          results: successCount
+          status: 'COMPLETED'
+          // results is now updated incrementally!
         }
       });
       logger.info(`✅ Updated Scraping Job ${scrapingJobId} status to COMPLETED.`);

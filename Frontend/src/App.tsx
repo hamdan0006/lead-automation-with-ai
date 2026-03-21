@@ -15,13 +15,7 @@ import VerifyEmail from './pages/AuthPages/VerifyEmail';
 // Protected pages
 import Home from './pages/Dashboard/Home';
 
-import Flows from './pages/Flows/Flows';
-import FlowTemplateDetail from './pages/Flows/FlowsTemplateDetail';
-import FlowSetup from './pages/Flows/FlowSetup';
-import FlowAnalytics from './pages/Flows/FlowAnalytics';
-import FlowActivities from './pages/Flows/FlowActivities';
-import FlowProspects from './pages/Flows/FlowProspects';
-import FlowProspectDetail from './pages/Flows/FlowProspectDetail';
+
 import UserProfiles from './pages/UserProfiles';
 import Trobs from './pages/Trobs/Trobs';
 import TrobDetail from './pages/Trobs/TrobDetail';
@@ -31,6 +25,8 @@ import CompletedAutomations from './pages/Automations/CompletedAutomations';
 import Platforms from './pages/platforms/Platforms';
 import Pricing from './pages/Pricing/Pricing';
 import NotFound from './pages/OtherPage/NotFound';
+import Leads from './pages/Leads/Lead';
+import LeadDetail from './pages/Leads/LeadDetail';
 // Since I can't verify all, I will comment out ones I'm unsure of or map them to existing pages if possible. 
 // However, the user explicitly asked for these routes. I will include them and if they fail, the user will see.
 // But valid paths are critical.
@@ -89,14 +85,9 @@ function App() {
 
 
 
-          <Route path="flows" element={<Flows />} />
-          <Route path="flows/template/:templateId" element={<FlowTemplateDetail />} />
-          <Route path="flows/setup/:templateId" element={<FlowSetup />} />
-          <Route path="flows/:flowId/analytics" element={<FlowAnalytics />} />
-          <Route path="flows/:flowId/activities" element={<FlowActivities />} />
-          <Route path="flows/:flowId/prospects" element={<FlowProspects />} />
-          <Route path="flows/:flowId/prospects/:prospectId" element={<FlowProspectDetail />} />
-
+          <Route path="/leads" element={<Leads />} />
+          <Route path="/leads/:jobId" element={<LeadDetail />} />
+         
           <Route path="profile-settings" element={<UserProfiles />} />
 
           <Route path="/trobs" element={<Trobs />} />

@@ -10,16 +10,13 @@ const logger = pino(
     level: process.env.LOG_LEVEL || 'info',
   },
   isDev
-    ? pino.transport({
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname',
-          sync: true, // 🔑 KEY FIX: sync mode prevents loss when --watch restarts worker threads
-        },
+    ? require('pino-pretty')({
+        colorize: true,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname',
+        sync: true,
       })
-    : undefined // In production, stream to stdout natively (JSON logs)
+    : pino.destination({ sync: true }) // In production, sync stdout is safer for crash logging
 );
 
 module.exports = logger;

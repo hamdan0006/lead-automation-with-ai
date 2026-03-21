@@ -8,8 +8,14 @@ const {
   listTemplates,
   createTemplate,
   updateTemplate,
-  deleteTemplate
+  deleteTemplate,
+  getLeadsByJobId,
+  getJobs
 } = require('../Controllers/scraper.controller');
+const { verifyToken } = require('../middlewares/auth.middleware');
+
+// Protect all /scraper routes with authentication
+router.use(verifyToken);
 
 // GET /scraper/verify
 router.get('/verify', verifyPuppeteer);
@@ -28,5 +34,11 @@ router.get('/templates', listTemplates);
 router.post('/templates', createTemplate);
 router.put('/templates/:id', updateTemplate);
 router.delete('/templates/:id', deleteTemplate);
+
+// GET /scraper/jobs/:jobId/leads
+router.get('/jobs/:jobId/leads', getLeadsByJobId);
+
+// GET /scraper/jobs
+router.get('/jobs', getJobs);
 
 module.exports = router;
