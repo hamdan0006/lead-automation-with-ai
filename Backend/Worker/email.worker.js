@@ -3,7 +3,7 @@ const redis = require('../config/redis'); // Use existing Redis connection
 const logger = require('../utils/logger');
 const { extractEmailsFromWebsite } = require('../Scrapper/email.scraper');
 const { prisma } = require('../config/db');
-const { addSendEmailJob } = require('../Services/mail.service');
+// const { addSendEmailJob } = require('../Services/mail.service');
 
 /**
  * BullMQ Worker for Email Extraction
@@ -40,10 +40,8 @@ const startEmailWorker = () => {
 
           logger.info(`✅ Lead ${leadId} enriched with email: ${chosenEmail}`);
 
-          // 🚀 START NEW JOB: Send email using BullMQ once extraction is completed
-          if (updatedLead.email) {
-            await addSendEmailJob(updatedLead.id, updatedLead.email, updatedLead.name);
-          }
+          // 🛑 Auto-sending email after extraction has been disabled.
+          // Emails will only be sent when explicitly triggered via the /send-emails route.
         } else {
           // Flag as visited anyway
           await prisma.lead.update({
