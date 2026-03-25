@@ -1,6 +1,6 @@
 const puppeteer = require('puppeteer');
 const logger = require('../utils/logger');
-const { runMapsScraper } = require('../Scrapper/maps.scraper');
+const { addMapsScrapingJob } = require('./mapsQueue.service');
 
 const { prisma } = require('../config/db');
 
@@ -41,22 +41,15 @@ const startMapsBackgroundScraping = async (query, leadType) => {
       data: {
         url: `https://www.google.com/maps/search/${encodeURIComponent(query)}/`,
         leadType: leadType || null,
-        status: 'PROCESSING',
+        status: 'PENDING',
         results: 0
       }
     });
 
     logger.info(`📝 Created Scraping Job ID: ${job.id} for query: "${query}"`);
 
-    // 2. Run scraper in the background and pass the Job ID
-    runMapsScraper(query, job.id, leadType).catch(async (err) => {
-      logger.error(`Background scraper failed entirely for Job ${job.id}: ${err.message}`);
-      // Update job status to FAILED
-      await prisma.scrapingJob.update({
-        where: { id: job.id },
-        data: { status: 'FAILED' }
-      }).catch(() => {});
-    });
+    // 2. Add job to the maps background queue
+    await addMapsScrapingJob(query, job.id, leadType);
 
     return job;
   } catch (error) {

@@ -143,6 +143,11 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
         // Minor wait for details to populate - more variable duration
         await sleep(getRandomInt(2000, 5000));
 
+        // Enable console logging from inside the page for debugging
+        detailPage.on('console', msg => {
+          if (msg.type() === 'log') logger.info(`[Browser Log] ${msg.text()}`);
+        });
+
         // Data Extraction
         const leadData = await detailPage.evaluate(() => {
           // Google Maps DOM selectors (these can be brittle and change frequently)
@@ -158,7 +163,46 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
           const phoneEl = document.querySelector('button[data-item-id^="phone:tel:"]');
           const phone = phoneEl ? phoneEl.innerText.trim() : null;
 
-          return { name, address, website, phone };
+          // --- ROBUST RATING EXTRACTION ---
+          let rating = null;
+          const ratingEl = document.querySelector('span[aria-label*="stars"]');
+          if (ratingEl && ratingEl.ariaLabel) {
+            rating = parseFloat(ratingEl.ariaLabel.split(' ')[0]);
+          } else {
+             // Fallback: look for the text in the known rating class
+             const fallbackRating = document.querySelector('span.MW497e');
+             if (fallbackRating) rating = parseFloat(fallbackRating.innerText);
+          }
+
+          // --- ROBUST REVIEWS EXTRACTION ---
+          let reviews = null;
+          const reviewsEl = document.querySelector('button[aria-label*="reviews"]');
+          if (reviewsEl && reviewsEl.ariaLabel) {
+            reviews = parseInt(reviewsEl.ariaLabel.replace(/[^0-9]/g, ''));
+          } else {
+            // Fallback 1: Any button with "reviews" in aria-label
+            const anyReviewBtn = Array.from(document.querySelectorAll('button')).find(b => b.ariaLabel && b.ariaLabel.toLowerCase().includes('review'));
+            if (anyReviewBtn) {
+              reviews = parseInt(anyReviewBtn.ariaLabel.replace(/[^0-9]/g, ''));
+            } else {
+              // Fallback 2: Look for the text count inside the rating container region
+              const reviewsTextEl = document.querySelector('span.fontBodyMedium span[aria-label*="reviews"]');
+              if (reviewsTextEl) {
+                reviews = parseInt(reviewsTextEl.ariaLabel.replace(/[^0-9]/g, ''));
+              } else {
+                // Fallback 3: Search for parentheses count (e.g. "(123)") near the rating
+                const allSpans = Array.from(document.querySelectorAll('span'));
+                const parenMatch = allSpans.find(s => s.innerText && /^\(\d[,.\d]*\)$/.test(s.innerText.trim()));
+                if (parenMatch) {
+                  reviews = parseInt(parenMatch.innerText.replace(/[^0-9]/g, ''));
+                }
+              }
+            }
+          }
+
+          console.log(`Extracted for ${name}: Rating=${rating}, Reviews=${reviews}`);
+
+          return { name, address, website, phone, rating, reviews };
         });
 
         if (leadData.name && leadData.address) {
@@ -171,21 +215,24 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
           // Save to Database
           await prisma.lead.upsert({
             where: { uniqueKey },
-            update: {}, // Don't override existing if duplicating
+            update: {
+              rating: leadData.rating,
+              reviews: leadData.reviews
+            }, 
             create: {
               name: leadData.name,
               address: leadData.address,
               website: leadData.website,
               hasWebsite: !!leadData.website,
               phone: leadData.phone,
-              keyword: query, // 👈 SAVE THE SEARCH QUERY AS THE KEYWORD
+              rating: leadData.rating,
+              reviews: leadData.reviews,
+              keyword: query, 
               leadType: leadType || null,
               source: 'google_maps',
               mapsScraped: true,
               uniqueKey: uniqueKey,
-              // Link to the job
               scrapingJobId: scrapingJobId,
-              // Parsed location fields
               area,
               city,
               state,

@@ -6,7 +6,7 @@ class HealthService {
     // In a real app, this might check database connection, Redis, etc.
     return {
       status: 'success',
-      message: 'Lead Generation Automation API is running smoothly!',
+      message: 'BizBuilder API is running smoothly!',
       timestamp: new Date().toISOString(),
     };
   }

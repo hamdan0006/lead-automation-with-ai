@@ -13,10 +13,8 @@ model Lead {
   name           String?
   email          String?      @unique
   phone          String?
-  ownerName      String?
   company        String?
   source         String?
-  leadType       String?
   status         String       @default("NEW")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -36,6 +34,13 @@ model Lead {
   hasWebsite     Boolean?
   scrapingJobId  Int?
   keyword        String?
+  ownerName      String?
+  leadType       String?
+  rating         Float?
+  reviews        Int?
+  lastEmailedAt  DateTime?
+  followUpDate   DateTime?
+  followUpSent   Boolean      @default(false)
   scrapingJob    ScrapingJob? @relation(fields: [scrapingJobId], references: [id])
 
   @@map("leads")
@@ -44,26 +49,26 @@ model Lead {
 model ScrapingJob {
   id        Int      @id @default(autoincrement())
   url       String
-  leadType  String?
   status    String   @default("PENDING")
   results   Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  leadType  String?
   leads     Lead[]
 
   @@map("scraping_jobs")
 }
 
 model User {
-  id            Int      @id @default(autoincrement())
-  firstName     String
-  lastName      String
-  email         String   @unique
-  username      String   @unique
-  password      String
-  isVerified    Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id         Int      @id @default(autoincrement())
+  firstName  String
+  lastName   String
+  email      String   @unique
+  username   String   @unique
+  password   String
+  isVerified Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@map("users")
 }

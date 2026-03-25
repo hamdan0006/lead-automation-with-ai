@@ -15,6 +15,7 @@ const authRoutes = require('./Routes/auth.route');
 // Import Workers
 const { startEmailWorker } = require('./Worker/email.worker');
 const { startMailWorker } = require('./Worker/mail.worker');
+const { startMapsWorker } = require('./Worker/maps.worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,7 +45,7 @@ app.use('/api/auth', authRoutes);
 
 // Fallback Route
 app.get('/', (req, res) => {
-  res.json({ message: 'Welcome to the LeadGen Automation API. Try /health' });
+  res.json({ message: 'Welcome to the BizBuilder API. Try /health' });
 });
 
 // =======================
@@ -57,6 +58,7 @@ const startServer = async () => {
   // Start BullMQ Workers
   startEmailWorker();
   startMailWorker();
+  startMapsWorker();
 
   app.listen(PORT, () => {
     logger.info(`🚀 Server is running on http://localhost:${PORT}`);

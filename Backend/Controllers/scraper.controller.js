@@ -66,16 +66,12 @@ const triggerEmailExtraction = async (req, res) => {
 
 const triggerEmailOutreach = async (req, res) => {
   try {
-    const { jobId, templateIds } = req.body;
-    const enqueuedCount = await mailService.enqueueLeadsForOutreach(jobId, templateIds);
+    const { jobId } = req.body;
+    const enqueuedCount = await mailService.enqueueLeadsForOutreach(jobId);
 
     let message = jobId 
-      ? `Successfully enqueued ${enqueuedCount} leads from job #${jobId} for outreach.`
-      : `Successfully enqueued ${enqueuedCount} leads for outreach.`;
-
-    if (templateIds && templateIds.length > 0) {
-        message += ` Using templates: ${templateIds.join(', ')}`;
-    }
+      ? `Successfully enqueued ${enqueuedCount} leads from job #${jobId} for AI outreach.`
+      : `Successfully enqueued ${enqueuedCount} leads for AI outreach.`;
 
     res.status(202).json({
       success: true,
@@ -84,7 +80,7 @@ const triggerEmailOutreach = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Error triggering email outreach: ${error.message}`);
-    res.status(500).json({ success: false, message: 'Failed to trigger email outreach.', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to trigger AI email outreach.', error: error.message });
   }
 };
 

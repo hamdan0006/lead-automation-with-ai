@@ -1,9 +1,10 @@
 const { Worker } = require('bullmq');
 const redis = require('../config/redis');
 const logger = require('../utils/logger');
-const { sendEmail } = require('../Services/mail.service');
+const { sendEmail, addSendEmailJob } = require('../Services/mail.service');
 const { prisma } = require('../config/db');
 const { mailerRules, getRandomInt } = require('../config/mailer.rules');
+const { generateOutreachBody, generateFollowUpBody } = require('../Services/aiEmail.service');
 
 /**
  * Utility to pause execution
@@ -28,7 +29,7 @@ const startMailWorker = () => {
       const { templateIds } = job.data;
 
       try {
-        // Fetch full lead data to get company/name for templates
+        // Fetch full lead data to get company/name
         const lead = await prisma.lead.findUnique({ where: { id: leadId } });
         
         if (!lead) {
@@ -36,26 +37,51 @@ const startMailWorker = () => {
             return;
         }
 
-        // Randomly pick a template if an array was provided
-        let chosenTemplateId = null;
-        if (templateIds && templateIds.length > 0) {
-            chosenTemplateId = templateIds[Math.floor(Math.random() * templateIds.length)];
-            logger.info(`🎲 Picked template #${chosenTemplateId} from provided options for lead ${leadId}`);
+        // Generate AI Content
+        let aiContent = null;
+        logger.info(`🤖 Generating AI email for lead ${leadId} (${job.data.isFollowUp ? 'Follow-up' : 'Outreach'})`);
+        if (job.data.isFollowUp) {
+            aiContent = await generateFollowUpBody(lead.name || 'there', lead.leadType);
+        } else {
+            aiContent = await generateOutreachBody(
+                lead.name || 'Business Owner', 
+                lead.leadType || 'business', 
+                lead.city || 'your area'
+            );
         }
 
-        // 1. Send the email with the full lead data and chosen template
-        await sendEmail(email, lead, chosenTemplateId);
+        // 1. Send the email with the full lead data and AI content
+        await sendEmail(email, lead, aiContent, job.data.isFollowUp || false);
 
-        // 2. Update lead status to CONTACTED
-        await prisma.lead.update({
-          where: { id: leadId },
-          data: {
-            contacted: true,
-            status: 'CONTACTED'
-          }
-        });
+        // 2. Update lead status to track contacts and schedule followups if needed
+        if (!job.data.isFollowUp) {
+            await prisma.lead.update({
+              where: { id: leadId },
+              data: {
+                contacted: true,
+                status: 'CONTACTED',
+                lastEmailedAt: new Date(),
+                followUpDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) // 3 days from now
+              }
+            });
+            logger.info(`✅ Lead ${leadId} status updated to CONTACTED.`);
 
-        logger.info(`✅ Lead ${leadId} status updated to CONTACTED.`);
+            // Queue the follow-up email immediately with a BullMQ delay
+            const followUpDelayMs = 3 * 24 * 60 * 60 * 1000;
+            logger.info(`⏰ Scheduling follow-up for lead ${leadId} in 3 days...`);
+            await addSendEmailJob(leadId, email, lead.name, true, followUpDelayMs);
+        } else {
+            // It was a follow up email
+            await prisma.lead.update({
+              where: { id: leadId },
+              data: {
+                followUpSent: true,
+                status: 'FOLLOWED_UP',
+                lastEmailedAt: new Date()
+              }
+            });
+            logger.info(`✅ Follow-up sent and marked for lead ${leadId}.`);
+        }
         
         // 3. Increment session counter
         emailsSentInSession++;
