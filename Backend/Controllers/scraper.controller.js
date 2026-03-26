@@ -217,6 +217,29 @@ const getJobs = async (req, res) => {
   }
 };
 
+const getLeadsWithoutWebsite = async (req, res) => {
+  try {
+    const leads = await prisma.lead.findMany({
+      where: {
+        OR: [
+          { website: null },
+          { hasWebsite: false }
+        ]
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.status(200).json({
+      success: true,
+      count: leads.length,
+      leads
+    });
+  } catch (error) {
+    logger.error(`Error fetching leads without website: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to fetch leads without website.' });
+  }
+};
+
 module.exports = {
   verifyPuppeteer,
   triggerMapsScraper,
@@ -227,5 +250,6 @@ module.exports = {
   updateTemplate,
   deleteTemplate,
   getLeadsByJobId,
-  getJobs
+  getJobs,
+  getLeadsWithoutWebsite
 };
