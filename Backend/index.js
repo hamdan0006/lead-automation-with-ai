@@ -16,6 +16,7 @@ const authRoutes = require('./Routes/auth.route');
 const { startEmailWorker } = require('./Worker/email.worker');
 const { startMailWorker } = require('./Worker/mail.worker');
 const { startMapsWorker } = require('./Worker/maps.worker');
+const { startReplyWorker } = require('./Worker/reply.worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -59,6 +60,7 @@ const startServer = async () => {
   startEmailWorker();
   startMailWorker();
   startMapsWorker();
+  startReplyWorker();
 
   app.listen(PORT, () => {
     logger.info(`🚀 Server is running on http://localhost:${PORT}`);
