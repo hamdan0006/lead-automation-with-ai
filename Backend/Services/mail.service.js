@@ -55,10 +55,12 @@ const sendEmail = async (to, leadData, aiContent, isFollowUp = false) => {
     
     let subject, body;
 
+    const bizName = leadData.name || 'Your business';
+
     if (isFollowUp) {
-        subject = `Following up, ${leadData.name || 'there'}!`;
+        subject = `${bizName}: Following up`;
     } else {
-        subject = `Quick question regarding ${leadData.name || 'your business'}`;
+        subject = `${bizName}: Quick question`;
     }
     body = aiContent || "Hello, I wanted to reach out but an error arose generating the message. Please excuse me.";
     
@@ -113,7 +115,6 @@ const enqueueLeadsForOutreach = async (jobId) => {
         }
 
         return leads.length;
-
     } catch (error) {
         logger.error(`❌ Bulk outreach enqueue failed: ${error.message}`);
         throw error;

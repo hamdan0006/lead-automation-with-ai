@@ -16,40 +16,43 @@ if (apiKey) {
  * @param {string} businessName 
  * @param {string} industry 
  * @param {string} city 
+ * @param {boolean} isInsecure - Whether the site uses http instead of https
  * @returns {Promise<string>} The generated email text
  */
-const generateOutreachBody = async (businessName, industry, city) => {
+const generateOutreachBody = async (businessName, industry, city, isInsecure = false) => {
     if (!openai) {
         throw new Error('Llama API key missing. Cannot generate AI email.');
     }
+
+    const insecureNote = isInsecure 
+        ? `- Specifically mention that you noticed their website is currently flagged as "Not Secure" because it's using http instead of https.
+- Explain that you build websites and specifically work on security, performance, and automation to decrease their effort and help the business grow.`
+        : `- After mentioning their presence, add: "Most agencies in your space have a couple of small gaps that quietly cost them leads — and I think I've spotted a few for you specifically."
+- Mention how you build automations that handle the repetitive stuff in the background, so growth doesn't always need their attention.`;
 
     const prompt = `Write a short cold outreach email from a web developer who also builds AI automations.
 
 Rules:
 - Maximum 75 words
-- Natural, conversational human tone
-- No marketing buzzwords or hype
-- No emojis, no markdown (do not use **, _, or ##)
-- USE LINE BREAKS. Break the email into 3 or 4 very short paragraph blocks (separated by empty lines) to make it highly readable.
-- Start with the business name in the first sentence
-- Make a subtle, specific observation about their website — something that feels like you actually visited it, not generic
-- Hint that their site may not be converting or capturing leads as well as it could
-- Naturally mention that you build websites and AI automations for businesses in their industry
-- Keep the tone curious and helpful, never pushy or salesy
-- Close the final paragraph with one simple, low-friction question
-- End with a casual sign-off (on its own line), no name
-- Return only the raw email text with paragraph spacing, nothing else
+- NO MARKETING BUZZWORDS. No emojis. No markdown.
+- USE LINE BREAKS. Write exactly 3 very short paragraph blocks, separated by empty lines.
+- Paragraph 1: Mention [Business name] has a strong presence in [City] [Industry].
+- Paragraph 2: ${insecureNote}
+- Paragraph 3: Mention you build automations and end with the question: "Worth a quick look?"
+- Sign-off (ensure there is an empty line before this):
+  Regards,
+  BizBuilder
+- Return only the raw email text with paragraph breaks, nothing else.
 
 Business name: ${businessName}
 Industry: ${industry}
-City: ${city}
-`;
+City: ${city}`;
 
     try {
         const response = await openai.chat.completions.create({
             model: "meta-llama/llama-3.3-70b-instruct",
             messages: [{ role: "user", content: prompt }],
-            max_tokens: 150
+            max_tokens: 200
         });
 
         // The model should return only the email body
@@ -63,25 +66,31 @@ City: ${city}
 /**
  * Generates a simple follow-up email after 3 days
  * @param {string} businessName 
+ * @param {string} industry
+ * @param {boolean} isInsecure
  * @returns {Promise<string>} The generated follow-up email text
  */
-const generateFollowUpBody = async (businessName, industry) => {
+const generateFollowUpBody = async (businessName, industry, isInsecure = false) => {
     if (!openai) {
         throw new Error('Llama API key missing. Cannot generate AI email.');
     }
 
-    const prompt = `Write a short follow-up to a previous cold outreach email.
+    const insecureFollowUp = isInsecure
+        ? `- Briefly re-mention the security issue (http vs https) and how you can help fix it while improving their site's performance and security overall.`
+        : `- Briefly re-hint that those small gaps are still there and easy to fix.`;
+
+    const prompt = `Write a very short follow-up to a previous email.
 
 Rules:
-- Maximum 40 words
-- Calm, natural tone — not pushy, not overly casual
-- No emojis, no markdown (no bold or italics)
-- USE LINE BREAKS. Write in 2 or 3 short paragraph blocks, separated by empty lines.
-- Reference that you reached out before without being repetitive
-- Briefly re-hint at their website or lead capture without re-pitching
-- End with one easy yes/no question, like whether it's worth a quick chat
-- Casual sign-off, no name
-- Return only the raw email text with paragraph breaks, nothing else
+- Maximum 35 words.
+- No marketing buzzwords. No emojis. No markdown.
+- USE LINE BREAKS. Write exactly 2 short paragraph blocks, separated by empty lines.
+- Paragraph 1: Mention you're just following up on your last note regarding ${businessName}.
+- Paragraph 2: ${insecureFollowUp} End with the question: "Worth a quick chat?"
+- Sign-off (ensure there is an empty line before this):
+  Regards,
+  BizBuilder
+- Return only the raw email text with paragraph breaks, nothing else.
 
 Business name: ${businessName}
 Industry: ${industry || 'business'}`;

@@ -41,6 +41,8 @@ model Lead {
   lastEmailedAt  DateTime?
   followUpDate   DateTime?
   followUpSent   Boolean      @default(false)
+  followUp       Boolean      @default(true)
+  receivedReply  Boolean      @default(false)
   scrapingJob    ScrapingJob? @relation(fields: [scrapingJobId], references: [id])
 
   @@map("leads")

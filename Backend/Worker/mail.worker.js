@@ -31,23 +31,40 @@ const startMailWorker = () => {
       try {
         // Fetch full lead data to get company/name
         const lead = await prisma.lead.findUnique({ where: { id: leadId } });
-        
+
         if (!lead) {
-            logger.error(`Lead ${leadId} not found in database.`);
-            return;
+          logger.error(`Lead ${leadId} not found in database.`);
+          return;
         }
+
+        // --- SAFETY CHECK: IF REPLIED OR STOPPED, DO NOT SEND ---
+        if (lead.receivedReply || lead.status === 'REPLIED' || lead.status === 'STOPPED') {
+          logger.info(`🚫 Skipping email for lead ${leadId} (${email}): Status is ${lead.status} or reply already received.`);
+          return;
+        }
+
+        // --- SAFETY CHECK: IF FOLLOW-UP IS DISABLED MANUALLY ---
+        if (job.data.isFollowUp && lead.followUp === false) {
+          logger.info(`🚫 Skipping follow-up for lead ${leadId}: Follow-up is disabled in database.`);
+          return;
+        }
+
+        // Check for insecure website (http instead of https)
+        const isInsecure = lead.website && lead.website.startsWith('http://');
 
         // Generate AI Content
         let aiContent = null;
-        logger.info(`🤖 Generating AI email for lead ${leadId} (${job.data.isFollowUp ? 'Follow-up' : 'Outreach'})`);
+        logger.info(`🤖 Generating AI email for lead ${leadId} (${job.data.isFollowUp ? 'Follow-up' : 'Outreach'}) ${isInsecure ? '[INSECURE SITE ALERT]' : ''}`);
+
         if (job.data.isFollowUp) {
-            aiContent = await generateFollowUpBody(lead.name || 'there', lead.leadType);
+          aiContent = await generateFollowUpBody(lead.name || 'there', lead.leadType, isInsecure);
         } else {
-            aiContent = await generateOutreachBody(
-                lead.name || 'Business Owner', 
-                lead.leadType || 'business', 
-                lead.city || 'your area'
-            );
+          aiContent = await generateOutreachBody(
+            lead.name || 'Business Owner',
+            lead.leadType || 'business',
+            lead.city || 'your area',
+            isInsecure
+          );
         }
 
         // 1. Send the email with the full lead data and AI content
@@ -55,69 +72,75 @@ const startMailWorker = () => {
 
         // 2. Update lead status to track contacts and schedule followups if needed
         if (!job.data.isFollowUp) {
-            await prisma.lead.update({
-              where: { id: leadId },
-              data: {
-                contacted: true,
-                status: 'CONTACTED',
-                lastEmailedAt: new Date(),
-                followUpDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) // 3 days from now
-              }
-            });
-            logger.info(`✅ Lead ${leadId} status updated to CONTACTED.`);
+          await prisma.lead.update({
+            where: { id: leadId },
+            data: {
+              contacted: true,
+              status: 'CONTACTED',
+              lastEmailedAt: new Date(),
+              followUpDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) // 3 days from now
+            }
+          });
+          logger.info(`✅ Lead ${leadId} status updated to CONTACTED.`);
 
-            // Queue the follow-up email immediately with a BullMQ delay
-            const followUpDelayMs = 3 * 24 * 60 * 60 * 1000;
-            logger.info(`⏰ Scheduling follow-up for lead ${leadId} in 3 days...`);
-            await addSendEmailJob(leadId, email, lead.name, true, followUpDelayMs);
+          // Queue the follow-up email immediately with a BullMQ delay
+          
+          // const followUpDelayMs = 3 * 24 * 60 * 60 * 1000;
+
+          const followUpDelayMs = 4 * 60 * 1000;
+
+          logger.info(`⏰ Scheduling follow-up for lead ${leadId} in 3 days...`);
+          await addSendEmailJob(leadId, email, lead.name, true, followUpDelayMs);
         } else {
-            // It was a follow up email
-            await prisma.lead.update({
-              where: { id: leadId },
-              data: {
-                followUpSent: true,
-                status: 'FOLLOWED_UP',
-                lastEmailedAt: new Date()
-              }
-            });
-            logger.info(`✅ Follow-up sent and marked for lead ${leadId}.`);
+          // It was a follow up email
+          await prisma.lead.update({
+            where: { id: leadId },
+            data: {
+              followUpSent: true,
+              status: 'FOLLOWED_UP',
+              lastEmailedAt: new Date()
+            }
+          });
+          logger.info(`✅ Follow-up sent and marked for lead ${leadId}.`);
         }
-        
+
         // 3. Increment session counter
         emailsSentInSession++;
 
         // 4. Decide on next pause
         if (emailsSentInSession >= nextLongPauseAt) {
           const pauseDuration = getRandomInt(mailerRules.longPause.min, mailerRules.longPause.max);
-          logger.info(`☕ Session session finished (${emailsSentInSession} sent). Taking a human-like break for ${Math.round(pauseDuration/60000)} minutes...`);
-          
+          logger.info(`☕ Session session finished (${emailsSentInSession} sent). Taking a human-like break for ${Math.round(pauseDuration / 60000)} minutes...`);
+
           await sleep(pauseDuration);
-          
+
           // Reset counters
           emailsSentInSession = 0;
           nextLongPauseAt = getRandomInt(mailerRules.triggerLongPauseAfter.min, mailerRules.triggerLongPauseAfter.max);
         } else {
           // Normal gap between emails
           const gap = getRandomInt(mailerRules.delayBetweenEmails.min, mailerRules.delayBetweenEmails.max);
-          logger.info(`⏳ Waiting ${Math.round(gap/1000)} seconds before next email...`);
+          logger.info(`⏳ Waiting ${Math.round(gap / 1000)} seconds before next email...`);
           await sleep(gap);
         }
 
       } catch (error) {
         logger.error(`❌ ERROR: Email failed to send for Lead ${leadId} (${email}): ${error.message}`);
-        
+
         // Optional: Update lead status so you can track failures in Prisma Studio
         await prisma.lead.update({
           where: { id: leadId },
           data: { status: 'SENDING_FAILED' }
-        }).catch(() => {}); // Avoid failing the failure block
+        }).catch(() => { }); // Avoid failing the failure block
 
         throw error; // Still throw so BullMQ can handle retries
       }
     },
     {
       connection: redis,
-      concurrency: 1 // One by one to avoid getting flagged as spam
+      concurrency: 1, // One by one to avoid getting flagged as spam
+      lockDuration: 600000, // 👈 10 minutes (Prevents "stalling" while the worker sleeps to look human)
+      stalledInterval: 60000 
     }
   );
 

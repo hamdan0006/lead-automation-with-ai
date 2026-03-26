@@ -61,7 +61,9 @@ const startEmailWorker = () => {
     },
     {
       connection: redis,
-      concurrency: 1 // One by one as requested
+      concurrency: 1, // One by one as requested
+      lockDuration: 300000, 
+      stalledInterval: 60000
     }
   );
 
