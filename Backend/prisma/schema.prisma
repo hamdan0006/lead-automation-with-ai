@@ -43,6 +43,11 @@ model Lead {
   followUpSent   Boolean      @default(false)
   followUp       Boolean      @default(true)
   receivedReply  Boolean      @default(false)
+  
+  // SEO Data
+  seoTitle       String?
+  seoDescription String?
+
   scrapingJob    ScrapingJob? @relation(fields: [scrapingJobId], references: [id])
 
   @@map("leads")

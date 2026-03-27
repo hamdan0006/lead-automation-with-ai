@@ -3,6 +3,12 @@ const redis = require('../config/redis');
 const logger = require('../utils/logger');
 const { runMapsScraper } = require('../Scrapper/maps.scraper');
 const { prisma } = require('../config/db');
+const { rules, getRandomInt } = require('../config/scraper.rules');
+
+/**
+ * Utility to pause execution
+ */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * BullMQ Worker for Maps Scraping
@@ -14,6 +20,12 @@ const startMapsWorker = () => {
     'maps-scraper',
     async (job) => {
       const { query, jobId, leadType } = job.data;
+
+      // 🛑 Anti-detection: Randomized gap between batches
+      const waitMs = getRandomInt(rules.batchGap.min, rules.batchGap.max);
+      logger.info(`⏳ Anti-detection: Waiting ${Math.round(waitMs / 1000)}s before starting Job ID ${jobId} for "${query}"...`);
+      await sleep(waitMs);
+
       logger.info(`🗺️ Maps Worker processing Job ID ${jobId} for query: "${query}"`);
 
       // Update status to PROCESSING only when the worker actually starts

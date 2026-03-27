@@ -30,6 +30,12 @@ const rules = {
       min: 20,
       max: 50
     }
+  },
+
+  // Gap between different scraping jobs (in ms) to prevent cluster detection
+  batchGap: {
+    min: 120000, // 2 minutes
+    max: 240000  // 4 minutes
   }
 };
 

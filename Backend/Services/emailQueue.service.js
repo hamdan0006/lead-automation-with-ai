@@ -14,16 +14,17 @@ const emailQueue = new Queue('email-extraction', {
  * Add unique job to extract email for a lead
  * @param {number} leadId 
  * @param {string} websiteUrl 
+ * @param {string} name
  */
-const addEmailExtractionJob = async (leadId, websiteUrl) => {
+const addEmailExtractionJob = async (leadId, websiteUrl, name) => {
   try {
     const job = await emailQueue.add(
       `extract-email-lead-${leadId}`,
-      { leadId, websiteUrl },
+      { leadId, websiteUrl, name },
       {
-        priority: 1, // Higher priority jobs can go first
-        removeOnComplete: true, // Keep it clean
-        removeOnFail: 100 // Keep last 100 failed jobs for debugging
+        priority: 1, 
+        removeOnComplete: true, 
+        removeOnFail: 100 
       }
     );
 
@@ -45,8 +46,6 @@ const enqueueLeadsByJobId = async (jobId) => {
     try {
         const query = {
             where: {
-                hasWebsite: true,
-                website: { not: null },
                 email: null,
                 websiteVisited: false
             }
@@ -67,7 +66,7 @@ const enqueueLeadsByJobId = async (jobId) => {
         logger.info(`🚛 Enqueuing ${leads.length} leads for enrichment${jobId ? ` from job ${jobId}` : ''}...`);
 
         for (const lead of leads) {
-            await addEmailExtractionJob(lead.id, lead.website);
+            await addEmailExtractionJob(lead.id, lead.website, lead.name);
         }
 
         return leads.length;

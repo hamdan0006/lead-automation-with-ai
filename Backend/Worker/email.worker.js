@@ -1,9 +1,8 @@
 const { Worker } = require('bullmq');
 const redis = require('../config/redis'); // Use existing Redis connection
 const logger = require('../utils/logger');
-const { extractEmailsFromWebsite } = require('../Scrapper/email.scraper');
+const { extractEmailsFromWebsite, searchEmailsOnWeb } = require('../Scrapper/email.scraper');
 const { prisma } = require('../config/db');
-// const { addSendEmailJob } = require('../Services/mail.service');
 
 /**
  * BullMQ Worker for Email Extraction
@@ -12,50 +11,64 @@ const startEmailWorker = () => {
   const worker = new Worker(
     'email-extraction',
     async (job) => {
-      const { leadId, websiteUrl } = job.data;
+      const { leadId, websiteUrl, name } = job.data;
+      let foundEmails = [];
+      let seoTitle = websiteUrl ? null : "No Website Found";
+      let seoDescription = websiteUrl ? null : "This lead does not have a website URL stored in the system.";
 
-      if (!websiteUrl) {
-        logger.warn(`Job ${job.id}: No website URL provided for lead ${leadId}`);
-        return;
-      }
-
-      logger.info(`🔍 Processing email extraction for lead ${leadId}: ${websiteUrl}`);
+      logger.info(`🔍 Processing email extraction for Lead #${leadId} (${name})`);
 
       try {
-        const emailsFound = await extractEmailsFromWebsite(websiteUrl);
+        // Step 1: Try standard website scraping if a URL exists
+        if (websiteUrl) {
+          logger.info(`🌐 Visiting website: ${websiteUrl}`);
+          const scrapeResult = await extractEmailsFromWebsite(websiteUrl);
+          foundEmails = scrapeResult.emails;
+          seoTitle = scrapeResult.seoTitle;
+          seoDescription = scrapeResult.seoDescription;
+        }
 
-        if (emailsFound.length > 0) {
-          // Take the first email found (preferring business domain if needed, but for now just the first one)
-          const chosenEmail = emailsFound[0];
+        // Step 2: Web Search Fallback if no emails found OR no website exists
+        if (foundEmails.length === 0 && name) {
+          logger.info(`⚠️ No emails found via website. Trying Web Search fallback for: "${name}"`);
+          const fallbackResult = await searchEmailsOnWeb(name);
+          foundEmails = fallbackResult.emails;
+        }
 
-          const updatedLead = await prisma.lead.update({
+        // Step 3: Database Update
+        if (foundEmails.length > 0) {
+          // Take the first email found (best match usually appears first or is unique)
+          const chosenEmail = foundEmails[0];
+
+          await prisma.lead.update({
             where: { id: leadId },
             data: {
               email: chosenEmail,
               emailExtracted: true,
               websiteVisited: true,
-              status: 'ENRICHED'
+              status: 'ENRICHED',
+              seoTitle,
+              seoDescription
             }
           });
 
           logger.info(`✅ Lead ${leadId} enriched with email: ${chosenEmail}`);
 
-          // 🛑 Auto-sending email after extraction has been disabled.
-          // Emails will only be sent when explicitly triggered via the /send-emails route.
         } else {
-          // Flag as visited anyway
           await prisma.lead.update({
             where: { id: leadId },
             data: {
               websiteVisited: true,
-              status: 'NO_EMAIL_FOUND'
+              status: 'NO_EMAIL_FOUND',
+              seoTitle,
+              seoDescription
             }
           });
 
-          logger.info(`⚠️ No emails found for lead ${leadId} on ${websiteUrl}`);
+          logger.info(`❌ No emails found for lead ${leadId} after all attempts.`);
         }
       } catch (error) {
-        logger.error(`❌ Worker failed for lead ${leadId}: ${error.message}`);
+        logger.error(`❌ Email Worker failed for lead ${leadId}: ${error.message}`);
         throw error; // Let BullMQ handle retry if configured
       }
     },
