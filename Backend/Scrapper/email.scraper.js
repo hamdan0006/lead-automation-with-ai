@@ -1,6 +1,7 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
+const axios = require('axios');
 
 const logger = require('../utils/logger');
 
@@ -8,6 +9,56 @@ const logger = require('../utils/logger');
  * Utility to pause execution
  */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Fetch website speed using check-host.net API
+ * Returns the average response time from multiple global nodes in seconds
+ */
+const getCheckHostSpeed = async (url) => {
+  try {
+    logger.info(`🛰️ Starting check-host.net speed test for: ${url}`);
+    
+    // Step 1: Initialize check
+    const { data: initData } = await axios.get(
+      `https://check-host.net/check-http?host=${encodeURIComponent(url)}&max_nodes=3`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+
+    if (!initData || !initData.request_id) {
+        throw new Error('Failed to initialize check-host request');
+    }
+
+    // Step 2: Wait for nodes to respond (5s as per your recommendation)
+    await sleep(5000);
+
+    // Step 3: Fetch results
+    const { data: results } = await axios.get(
+      `https://check-host.net/check-result/${initData.request_id}`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+
+    let totalMs = 0;
+    let nodeCount = 0;
+
+    // Calculate average from all nodes that responded
+    for (const [node, result] of Object.entries(results)) {
+      if (result?.[0] && result[0][0] === 1) { // 1 means success
+        const responseTimeMs = result[0][1] * 1000; // API returns seconds, convert to ms for precision
+        totalMs += responseTimeMs;
+        nodeCount++;
+      }
+    }
+
+    if (nodeCount === 0) return null;
+
+    const averageSeconds = parseFloat(((totalMs / nodeCount) / 1000).toFixed(2));
+    return averageSeconds;
+
+  } catch (error) {
+    logger.warn(`⚠️ check-host.net API failed for ${url}: ${error.message}. Falling back to internal timing.`);
+    return null;
+  }
+};
 
 /**
  * Email Scraper - Scrolls through a website and extracts found emails
@@ -67,6 +118,9 @@ const extractEmailsFromWebsite = async (url) => {
       const seoTitle = document.title;
       const seoDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || null;
 
+      // Check for mobile responsiveness (viewport meta tag presence)
+      const hasViewportMeta = document.querySelector('meta[name="viewport"]') !== null;
+
       // Get all text from body for email extraction
       const text = document.body.innerText;
       const foundEmails = text.match(emailRegex) || [];
@@ -75,21 +129,38 @@ const extractEmailsFromWebsite = async (url) => {
       const mailtoLinks = Array.from(document.querySelectorAll('a[href^="mailto:"]'))
         .map(a => a.href.replace('mailto:', '').split('?')[0]);
 
+      // ⏱️ Internal Performance fallback computation (Incognito visual load time)
+      const timing = window.performance.timing;
+      const localLoadTimeSeconds = ((timing.domContentLoadedEventEnd || Date.now()) - timing.navigationStart) / 1000;
+
       return {
         emails: [...foundEmails, ...mailtoLinks],
         seoTitle,
-        seoDescription
+        seoDescription,
+        isResponsive: hasViewportMeta,
+        localLoadTime: parseFloat(localLoadTimeSeconds.toFixed(2))
       };
     });
 
+    // ⚡ Fetch objective speed from check-host.net (or fallback to local timing)
+    let finalLoadTime = await getCheckHostSpeed(url);
+    if (!finalLoadTime) {
+      finalLoadTime = pageData.localLoadTime;
+      logger.info(`⏱️ Using internal load time: ${finalLoadTime}s (check-host API unavailable)`);
+    } else {
+      logger.info(`⚡ check-host.net Verified Load Time: ${finalLoadTime}s`);
+    }
+
     // Log the emails found
     const uniqueEmails = [...new Set(pageData.emails.map(e => e.toLowerCase().trim()))];
-    logger.info(`✅ Found ${uniqueEmails.length} unique emails on ${url}: ${uniqueEmails.join(', ')}`);
+    logger.info(`✅ Found ${uniqueEmails.length} unique emails on ${url}`);
 
     return {
       emails: uniqueEmails,
       seoTitle: pageData.seoTitle,
-      seoDescription: pageData.seoDescription
+      seoDescription: pageData.seoDescription,
+      loadTime: finalLoadTime,
+      isResponsive: pageData.isResponsive
     };
 
   } catch (error) {
@@ -98,14 +169,14 @@ const extractEmailsFromWebsite = async (url) => {
     return { 
       emails: [], 
       seoTitle: isTimeout ? 'Unreachable (Timeout)' : 'Unreachable (Error)', 
-      seoDescription: `Failed to load website: ${error.message}` 
+      seoDescription: `Failed to load website: ${error.message}`,
+      loadTime: null,
+      isResponsive: null
     };
   } finally {
     if (browser) await browser.close();
   }
 };
-
-const axios = require('axios');
 
 /**
  * Web Search Fallback (SerpStack API) - Uses a clean API instead of Puppeteer to bypass all captchas

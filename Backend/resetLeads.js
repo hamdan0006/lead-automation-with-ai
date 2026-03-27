@@ -12,7 +12,9 @@ async function resetLeadsForRetesting() {
                 emailExtracted: false,
                 websiteVisited: false,
                 seoTitle: null,
-                seoDescription: null
+                seoDescription: null,
+                loadTime: null,
+                isResponsive: null
             }
         });
 

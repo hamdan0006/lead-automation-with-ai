@@ -16,6 +16,8 @@ const startEmailWorker = () => {
       let rawEmails = [];
       let seoTitle = websiteUrl ? null : "No Website Found";
       let seoDescription = websiteUrl ? null : "This lead does not have a website URL stored in the system.";
+      let loadTime = null;
+      let isResponsive = null;
 
       logger.info(`🔍 Processing email extraction for Lead #${leadId} (${name})`);
 
@@ -27,6 +29,8 @@ const startEmailWorker = () => {
           rawEmails = scrapeResult.emails;
           seoTitle = scrapeResult.seoTitle;
           seoDescription = scrapeResult.seoDescription;
+          loadTime = scrapeResult.loadTime;
+          isResponsive = scrapeResult.isResponsive;
         }
 
         // Step 2: Web Search Fallback if no emails found OR no website exists
@@ -80,7 +84,9 @@ const startEmailWorker = () => {
             websiteVisited: true,
             status: chosenEmail ? 'ENRICHED' : 'NO_EMAIL_FOUND',
             seoTitle,
-            seoDescription
+            seoDescription,
+            loadTime,
+            isResponsive
           }
         });
 

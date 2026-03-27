@@ -47,6 +47,10 @@ model Lead {
   // SEO Data
   seoTitle       String?
   seoDescription String?
+  
+  // Performance Data
+  loadTime       Float?
+  isResponsive   Boolean?
 
   scrapingJob    ScrapingJob? @relation(fields: [scrapingJobId], references: [id])
 
