@@ -83,7 +83,7 @@ const extractEmailsFromWebsite = async (url) => {
     });
 
     // Log the emails found
-    const uniqueEmails = [...new Set(pageData.emails)].map(e => e.toLowerCase());
+    const uniqueEmails = [...new Set(pageData.emails.map(e => e.toLowerCase().trim()))];
     logger.info(`✅ Found ${uniqueEmails.length} unique emails on ${url}: ${uniqueEmails.join(', ')}`);
 
     return {
