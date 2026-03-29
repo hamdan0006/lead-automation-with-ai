@@ -3,6 +3,7 @@ const { prisma } = require('../config/db');
 const logger = require('../utils/logger');
 const { rules, getRandomInt } = require('../config/scraper.rules');
 const { parseAddress } = require('../utils/address.parser');
+const { sendNotificationEmail } = require('../Services/mail.service');
 
 /**
  * Utility to pause execution
@@ -271,6 +272,16 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
         }
       });
       logger.info(`✅ Updated Scraping Job ${scrapingJobId} status to COMPLETED.`);
+
+      // 🔔 Send Completion Notification
+      try {
+        await sendNotificationEmail(
+          `Scraping Job #${scrapingJobId} Completed!`,
+          `Google Maps Scraper has successfully completed Job #${scrapingJobId} for query "${query}".\n\n🎯 Results: ${successCount} leads gathered.\n📁 Lead Type: ${leadType || 'General'}\n✅ Success Rate: ${Math.round((successCount / targetLeadCount) * 100)}%`
+        );
+      } catch (err) {
+        logger.warn(`⚠️ Failed to send completion notification: ${err.message}`);
+      }
     }
 
   } catch (error) {

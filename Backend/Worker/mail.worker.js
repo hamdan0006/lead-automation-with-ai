@@ -104,6 +104,30 @@ const startMailWorker = () => {
           logger.info(`✅ Follow-up sent and marked for lead ${leadId}.`);
         }
 
+        // 🔔 Check for Batch Outreach Completion (Only for Initial Outreach)
+        if (!job.data.isFollowUp && lead.scrapingJobId) {
+          const remainingOutreach = await prisma.lead.count({
+            where: {
+              scrapingJobId: lead.scrapingJobId,
+              status: 'QUEUED' // Leads still waiting in the outreach queue
+            }
+          });
+
+          if (remainingOutreach === 0) {
+            const totalLeads = await prisma.lead.count({
+                where: { scrapingJobId: lead.scrapingJobId, email: { not: null } }
+            });
+
+            logger.info(`🎉 Outreach process for Job #${lead.scrapingJobId} is COMPLETED!`);
+
+            const { sendNotificationEmail } = require('../Services/mail.service');
+            await sendNotificationEmail(
+              `Outreach Job #${lead.scrapingJobId} Completed!`,
+              `The initial AI outreach campaign for Job #${lead.scrapingJobId} has finished.\n\n🎯 Total Leads Emailed: ${totalLeads}\n🚀 Next: Follow-ups are automatically scheduled for 3 days from now.`
+            ).catch(err => logger.warn(`⚠️ Failed to send outreach notification: ${err.message}`));
+          }
+        }
+
         // 3. Increment session counter
         emailsSentInSession++;
 

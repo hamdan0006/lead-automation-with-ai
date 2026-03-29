@@ -121,9 +121,39 @@ const enqueueLeadsForOutreach = async (jobId) => {
     }
 };
 
+/**
+ * Send an administrative notification email (e.g., job completion)
+ * @param {string} subject 
+ * @param {string} text 
+ */
+const sendNotificationEmail = async (subject, text) => {
+  try {
+    const to = process.env.NOTIFICATION_EMAIL;
+    if (!to) {
+      logger.warn('⚠️ NOTIFICATION_EMAIL not found in .env, skipping notification.');
+      return false;
+    }
+
+    const info = await transporter.sendMail({
+      from: `"Lead Gen System" <${process.env.SMTP_EMAIL}>`,
+      to,
+      subject,
+      text
+    });
+
+    logger.info(`✅ Notification email sent to ${to}: ${info.messageId}`);
+    return true;
+
+  } catch (error) {
+    logger.error(`❌ Notification Mailer Error: ${error.message}`);
+    throw error;
+  }
+};
+
 module.exports = {
   mailQueue,
   addSendEmailJob,
   sendEmail,
-  enqueueLeadsForOutreach
+  enqueueLeadsForOutreach,
+  sendNotificationEmail
 };
