@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle, Zap } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import useAuthStore from '../../stores/useAuthStore';
 
@@ -28,13 +28,14 @@ interface Lead {
   createdAt: string;
 }
 
-const LeadDetail: React.FC = () => {
+const EnrichmentDetail: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const { token } = useAuthStore();
-  
+
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEnriching, setIsEnriching] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1 });
 
   const fetchLeads = async (page = 1) => {
@@ -48,7 +49,7 @@ const LeadDetail: React.FC = () => {
       });
 
       if (!response.ok) throw new Error('Failed to fetch leads');
-      
+
       const data = await response.json();
       if (data.success) {
         setLeads(data.data);
@@ -73,25 +74,67 @@ const LeadDetail: React.FC = () => {
     }
   }, [token, jobId]);
 
+  const handleStartEnriching = async () => {
+    if (!jobId) return;
+    setIsEnriching(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/scraper/extract-emails`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ jobId: Number(jobId) })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.message || 'Failed to start enrichment');
+
+      toast.success(data.message || 'Enrichment started successfully!');
+
+      // Optionally refresh leads to show status changes if any update instantly
+      fetchLeads(pagination.page);
+
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || 'Failed to trigger enrichment.');
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
   return (
     <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
       <div className="flex flex-col mb-8 gap-4">
-        <button 
-          onClick={() => navigate('/start-scraping')}
+        <button
+          onClick={() => navigate('/start-enrichment')}
           className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white w-fit transition-colors mb-2"
         >
-          <ArrowLeft className="w-4 h-4" /> Back to Batches
+          <ArrowLeft className="w-4 h-4" /> Back to Enrichment Batches
         </button>
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-blue-500/10 dark:bg-blue-500/20 rounded-xl flex items-center justify-center border border-blue-500/20">
-            <Users className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-amber-500/10 dark:bg-amber-500/20 rounded-xl flex items-center justify-center border border-amber-500/20">
+              <Zap className="w-6 h-6 text-amber-500 dark:text-amber-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Batch #{jobId} Enrichment</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {pagination.total} leads pending enrichment
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Batch #{jobId} Detail</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {pagination.total} leads found in this execution
-            </p>
-          </div>
+
+          <button
+            onClick={handleStartEnriching}
+            disabled={isEnriching || leads.length === 0}
+            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors shadow-sm w-full md:w-auto"
+          >
+            <Zap className="w-4 h-4" />
+            {isEnriching ? 'Triggering...' : 'Start Enriching'}
+          </button>
         </div>
       </div>
 
@@ -127,8 +170,8 @@ const LeadDetail: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-semibold text-gray-900 dark:text-white group flex items-center gap-2">
-                           <Building className="w-4 h-4 text-gray-400 shrink-0" />
-                           {lead.name || lead.company || 'Unknown Entity'}
+                          <Building className="w-4 h-4 text-gray-400 shrink-0" />
+                          {lead.name || lead.company || 'Unknown Entity'}
                         </span>
                         {lead.website && (
                           <a href={lead.website} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline flex items-center mt-1">
@@ -139,23 +182,23 @@ const LeadDetail: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1.5">
-                         {lead.email ? (
-                           <span className="text-xs text-gray-600 dark:text-gray-300 flex items-center gap-1 truncate max-w-[150px]" title={lead.email}>
-                             <Mail className="w-3 h-3" /> {lead.email}
-                           </span>
-                         ) : (
-                           <span className="text-xs text-gray-400 dark:text-gray-600 italic">No Email</span>
-                         )}
-                         {lead.phone ? (
-                           <span className="text-xs text-gray-600 dark:text-gray-300 flex items-center gap-1">
-                             <Phone className="w-3 h-3" /> {lead.phone}
-                           </span>
-                         ) : null}
-                         {lead.linkedinUrl ? (
-                           <a href={lead.linkedinUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-500 flex items-center gap-1 hover:underline">
-                             <LinkIcon className="w-3 h-3" /> LinkedIn
-                           </a>
-                         ) : null}
+                        {lead.email ? (
+                          <span className="text-xs text-gray-600 dark:text-gray-300 flex items-center gap-1 truncate max-w-[150px]" title={lead.email}>
+                            <Mail className="w-3 h-3" /> {lead.email}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-600 italic">No Email</span>
+                        )}
+                        {lead.phone ? (
+                          <span className="text-xs text-gray-600 dark:text-gray-300 flex items-center gap-1">
+                            <Phone className="w-3 h-3" /> {lead.phone}
+                          </span>
+                        ) : null}
+                        {lead.linkedinUrl ? (
+                          <a href={lead.linkedinUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-500 flex items-center gap-1 hover:underline">
+                            <LinkIcon className="w-3 h-3" /> LinkedIn
+                          </a>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -171,32 +214,31 @@ const LeadDetail: React.FC = () => {
                         <span className="inline-flex w-fit items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
                           {lead.leadType || lead.source || 'N/A'}
                         </span>
-                        <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded text-xs font-medium ${
-                            lead.status === 'NEW' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
+                        <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded text-xs font-medium ${lead.status === 'NEW' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
                             lead.status === 'CONTACTED' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
-                            'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
-                        }`}>
+                              'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
+                          }`}>
                           {lead.status}
                         </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                        <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-md max-w-[150px] inline-block truncate" title={lead.keyword || ''}>
-                            {lead.keyword || 'Unknown'}
-                        </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-md max-w-[150px] inline-block truncate" title={lead.keyword || ''}>
+                        {lead.keyword || 'Unknown'}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                            <span className="flex items-center gap-1.5">
-                                {lead.mapsScraped ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <Circle className="w-3 h-3" />} Maps
-                            </span>
-                            <span className="flex items-center gap-1.5">
-                                {lead.emailExtracted ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <Circle className="w-3 h-3" />} Emails Found
-                            </span>
-                            <span className="flex items-center gap-1.5">
-                                {lead.contacted ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <Circle className="w-3 h-3" />} Reached Out
-                            </span>
-                        </div>
+                      <div className="flex flex-col gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                        <span className="flex items-center gap-1.5">
+                          {lead.mapsScraped ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <Circle className="w-3 h-3" />} Maps
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          {lead.emailExtracted ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <Circle className="w-3 h-3" />} Emails Found
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          {lead.contacted ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <Circle className="w-3 h-3" />} Reached Out
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -234,4 +276,4 @@ const LeadDetail: React.FC = () => {
   );
 };
 
-export default LeadDetail;
+export default EnrichmentDetail;

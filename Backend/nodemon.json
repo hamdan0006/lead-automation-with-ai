@@ -1,0 +1,13 @@
+{
+  "ignore": [
+    "*.png",
+    "*.jpeg",
+    "*.jpg",
+    "*.pdf",
+    "*.db",
+    "*.log",
+    ".local-chromium/*",
+    "dump.rdb"
+  ],
+  "ext": "js,json"
+}

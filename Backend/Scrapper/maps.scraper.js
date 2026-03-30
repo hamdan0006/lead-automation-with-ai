@@ -31,9 +31,10 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
     // Simulate realistic user agent
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    // Determine target number of leads for this run (80-120 randomly)
-    const targetLeadCount = getRandomInt(rules.leadsPerRun.min, rules.leadsPerRun.max);
-    logger.info(`🎯 Target leads for this run: ${targetLeadCount}`);
+    // Fetch a buffer of up to 80 links to ensure we can successfully extract 50 leads
+    const targetLeadCount = 80;
+    const MAX_SAVES = 50;
+    logger.info(`🎯 Max leads to save for this run: ${MAX_SAVES}`);
 
     // Direct search URL for Google Maps
     const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}/`;
@@ -251,6 +252,12 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
 
           logger.info(`✅ Saved Lead: ${leadData.name} | ${city}, ${state}, ${country}`);
           successCount++;
+
+          if (successCount >= MAX_SAVES) {
+             logger.info(`🎯 Reached target limit of ${MAX_SAVES} successfully saved leads. Stopping extraction.`);
+             await detailPage.close();
+             break;
+          }
         }
 
       } catch (err) {

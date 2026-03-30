@@ -95,51 +95,34 @@ const AppSidebar: React.FC = () => {
     },
     {
       icon: <Workflow className="w-[24px] h-[24px]" />,
-      name: "Flows",
-      path: "/flows",
+      name: "Start Scraping",
+      path: "/start-scraping",
     },
     {
       icon: <Zap className="w-[24px] h-[24px]" />,
-      name: "Trobs",
-      path: "/trobs",
+      name: "Start Enrichment",
+      path: "/start-enrichment",
     },
     {
-      icon: <Layers className="size-6" />,
-      name: "Automation",
-      subItems: [
-        { name: "Active Jobs", path: "/automations/active", pro: false },
-        { name: "Completed Jobs", path: "/automations/completed", pro: false },
-      ],
+      icon: <Zap className="w-[24px] h-[24px]" />,
+      name: "Start Email Automation",
+      path: "/start-automation",
     },
-    {
-      icon: <MessageSquare className="w-[24px] h-[24px]" />,
-      name: "Messages",
-      path: "/messages",
-    },
-    {
-      icon: <Link2 className="w-[24px] h-[24px]" />,
-      name: "Connections",
-      path: "/connections",
-    },
-    {
-      icon: <DollarSign className="w-[24px] h-[24px]" />,
-      name: "Pricing",
-      path: "/pricing",
-    },
+
   ];
 
   const othersItems: NavItem[] = [
-    {
-      icon: <HelpCircle className="size-6" />,
-      name: "Help and Support",
-      path: "https://trobyx.com/help",
-      isExternal: true,
-    },
-    {
-      icon: <LogOut className="size-6" />,
-      name: "Sign Out",
-      onClick: handleSignOut,
-    },
+    // {
+    //   icon: <HelpCircle className="size-6" />,
+    //   name: "Help and Support",
+    //   path: "https://trobyx.com/help",
+    //   isExternal: true,
+    // },
+    // {
+    //   icon: <LogOut className="size-6" />,
+    //   name: "Sign Out",
+    //   onClick: handleSignOut,
+    // },
   ];
 
   const isActive = useCallback(
@@ -492,15 +475,6 @@ const AppSidebar: React.FC = () => {
           </div>
         </nav>
 
-        <div className="mt-auto pb-6 2xl:pb-24">
-          <nav className="mb-6 !overflow-visible">
-            {renderMenuItems(
-              othersItems.filter(item => item.name !== "Sign Out" || isMobileOpen),
-              "others"
-            )}
-          </nav>
-          {isExpanded || isHovered || isMobileOpen ? <SidebarWidget /> : null}
-        </div>
       </div>
     </aside>
   );

@@ -17,16 +17,15 @@ import Home from './pages/Dashboard/Home';
 
 
 import UserProfiles from './pages/UserProfiles';
-import Trobs from './pages/Trobs/Trobs';
-import TrobDetail from './pages/Trobs/TrobDetail';
-import Messages from './pages/Messages/Messages';
-import ActiveAutomations from './pages/Automations/ActiveAutomations';
-import CompletedAutomations from './pages/Automations/CompletedAutomations';
-import Platforms from './pages/platforms/Platforms';
-import Pricing from './pages/Pricing/Pricing';
+
+
 import NotFound from './pages/OtherPage/NotFound';
 import Leads from './pages/Leads/Lead';
 import LeadDetail from './pages/Leads/LeadDetail';
+import Enrichment from './pages/Enrichment/Enrichment';
+import EnrichmentDetail from './pages/Enrichment/EnrichmentDetail';
+import EmailAutomation from './pages/EmailAutomation/EmailAutomation';
+import EmailAutomationDetail from './pages/EmailAutomation/EmailAutomationDetail';
 // Since I can't verify all, I will comment out ones I'm unsure of or map them to existing pages if possible. 
 // However, the user explicitly asked for these routes. I will include them and if they fail, the user will see.
 // But valid paths are critical.
@@ -85,27 +84,20 @@ function App() {
 
 
 
-          <Route path="/leads" element={<Leads />} />
-          <Route path="/leads/:jobId" element={<LeadDetail />} />
-         
+          <Route path="/start-scraping" element={<Leads />} />
+          <Route path="/start-scraping/:jobId" element={<LeadDetail />} />
+
           <Route path="profile-settings" element={<UserProfiles />} />
 
-          <Route path="/trobs" element={<Trobs />} />
+          <Route path="/start-enrichment" element={<Enrichment />} />
 
-          <Route path="/trobs/:trobId" element={<TrobDetail />} />
-
-
-          <Route path="/automations/active" element={<ActiveAutomations />} />
-          <Route path="/automations/completed" element={<CompletedAutomations />} />
-
-          <Route path="/messages" element={<Messages />} />
+          <Route path="/start-enrichment/:jobId" element={<EnrichmentDetail />} />
 
 
-          <Route path="/connections" element={<Platforms />} />
 
-          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/start-automation" element={<EmailAutomation />} />
 
-
+          <Route path="/start-automation/:jobId" element={<EmailAutomationDetail />} />
 
 
 

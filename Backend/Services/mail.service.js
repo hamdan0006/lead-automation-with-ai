@@ -108,13 +108,14 @@ const enqueueLeadsForOutreach = async (jobId) => {
         logger.info(`🚛 Enqueuing ${leads.length} leads for AI outreach...`);
 
         for (const lead of leads) {
-            await addSendEmailJob(lead.id, lead.email, lead.name);
-            
-            // Mark as QUEUED in DB right away to prevent double-enqueuing
+            // MUST happen FIRST: Mark as QUEUED in DB right away to prevent worker from instantly processing it and skipping it as 'NEW'
             await prisma.lead.update({
                 where: { id: lead.id },
                 data: { status: 'QUEUED' }
-            }).catch(() => {});
+            });
+
+            // NOW we queue the job. The worker will see it as 'QUEUED'
+            await addSendEmailJob(lead.id, lead.email, lead.name);
         }
 
         return leads.length;
