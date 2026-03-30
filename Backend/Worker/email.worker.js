@@ -35,11 +35,11 @@ const startEmailWorker = () => {
           isResponsive = scrapeResult.isResponsive;
         }
 
-        // Step 2: Web Search Fallback if NO emails found OR ONLY "info@" generic emails found
-        const hasGoodEmail = rawEmails.some(e => !e.startsWith('info@') && !e.startsWith('office@') && !e.startsWith('admin@'));
-        
-        if ((rawEmails.length === 0 || !hasGoodEmail) && name) {
-          logger.info(`⚠️ ${rawEmails.length === 0 ? 'No emails found' : 'Only generic (info@) emails found'} via website. Proactively trying Web Search fallback for: "${name}"`);
+        // Step 2: Web Search Fallback ONLY if absolutely ZERO emails were found
+        // By accepting 'info@' or 'office@' emails without trying to find a better one via SerpStack,
+        // we drastically reduce API usage without compromising our ability to send the lead an email.
+        if (rawEmails.length === 0 && name) {
+          logger.info(`⚠️ No emails found via website. Firing SerpStack Web Search fallback for: "${name}"`);
           const fallbackResult = await searchEmailsOnWeb(name);
           // Merge unique emails
           const combined = new Set([...rawEmails, ...fallbackResult.emails]);

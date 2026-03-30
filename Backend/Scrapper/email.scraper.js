@@ -157,41 +157,69 @@ const releaseSerpstackLock = () => {
   }
 };
 
+// ============================================================
+// API Key Rotation Logic
+// ============================================================
+let currentKeyIndex = 0;
+
+const getNextSerpstackKey = () => {
+  const keys = [
+    process.env.SERPSTACK_API_KEY,
+    process.env.SERPSTACK_API_KEY2,
+    process.env.SERPSTACK_API_KEY3,
+    process.env.SERPSTACK_API_KEY4,
+    process.env.SERPSTACK_API_KEY5
+  ].filter(k => k && k.trim() !== ''); // Clean out any missing or empty keys
+
+  if (keys.length === 0) return null;
+
+  const keyToUse = keys[currentKeyIndex % keys.length].trim();
+  currentKeyIndex++; 
+  return keyToUse;
+};
+
 const searchEmailsOnWeb = async (businessName) => {
-  const apiKey = process.env.SERPSTACK_API_KEY;
   const apiUrl = process.env.SERPSTACK_API_URL || 'https://api.serpstack.com/search';
 
-  if (!apiKey) {
-    logger.error('❌ SerpStack API Key is missing in .env!');
-    return { emails: [] };
-  }
-
-  // Serialize SerpStack calls to prevent 429 rate-limit errors
+  // Serialize searches to prevent hitting rate limits
   await acquireSerpstackLock();
 
   try {
-    // Random jitter (1-3s) to spread concurrent requests that queued up back-to-back
+    // Random jitter (1-3s) to spread requests that queued up back-to-back
     const jitter = Math.floor(Math.random() * 2000) + 1000;
     await sleep(jitter);
 
     const cleanName = businessName.replace(/[|;$%@"<>()+,]/g, ' ').replace(/\s+/g, ' ').trim();
     const searchQuery = `${cleanName} email address`;
 
-    logger.info(`🔍 Performing SerpStack API search for: "${searchQuery}"`);
-
-    // Retry up to 3 times with exponential backoff on 429
     let lastError;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    
+    // Attempt up to 5 times (enough to cycle through all keys if they all simultaneously fail or 429)
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const apiKey = getNextSerpstackKey();
+      
+      if (!apiKey) {
+        logger.error('❌ SerpStack API Keys are all missing in .env!');
+        return { emails: [] };
+      }
+
+      logger.info(`🔍 Performing SerpStack API search for: "${searchQuery}" (Using Key #${(currentKeyIndex - 1) % 5 + 1} | Attempt ${attempt})`);
+
       try {
         const response = await axios.get(apiUrl, {
           params: {
             access_key: apiKey,
             query: searchQuery,
-            num: 10
+            num: 15 // Pulling slightly more results for better accuracy
           }
         });
 
         const data = response.data;
+
+        // SerpStack errors (like rate limit inside the payload rather than a 429 status code)
+        if (data && data.error) {
+          throw new Error(`SerpStack API returned error: ${JSON.stringify(data.error)}`);
+        }
 
         if (!data || !data.organic_results) {
           logger.warn(`⚠️ SerpStack returned no organic results for: "${searchQuery}"`);
@@ -216,7 +244,7 @@ const searchEmailsOnWeb = async (businessName) => {
         const uniqueEmails = Array.from(allEmails)
           .filter(e => !e.includes('sentry.io') && !e.includes('google.com') && !e.includes('bing.com'));
 
-        // Sort: best match first (name keywords > contact@ > info@)
+        // Sort: best match first
         const nameKeywords = businessName.toLowerCase().split(' ').filter(w => w.length > 3);
         uniqueEmails.sort((a, b) => {
           const aMatches = nameKeywords.filter(kw => a.includes(kw)).length;
@@ -234,25 +262,24 @@ const searchEmailsOnWeb = async (businessName) => {
         return { emails: uniqueEmails };
 
       } catch (err) {
-        const is429 = err.response?.status === 429;
-        if (is429 && attempt < 3) {
-          const backoffMs = attempt * 5000; // 5s, 10s
-          logger.warn(`⚠️ SerpStack 429 for "${businessName}" (attempt ${attempt}/3). Retrying in ${backoffMs / 1000}s...`);
-          await sleep(backoffMs);
-          lastError = err;
-        } else {
-          throw err;
-        }
+        lastError = err;
+        
+        // If it's a rate limit or a generic error, we just loop again and it will naturally use the NEXT API Key!
+        const isRateLimit = err.response?.status === 429 || (err.message && err.message.includes('rate'));
+        
+        logger.warn(`⚠️ SerpStack Failed using Key #${(currentKeyIndex - 1) % 5 + 1} (${isRateLimit ? 'Rate Limit/Error' : err.message}). Rotating to next key...`);
+        
+        // Small delay before slamming the API with the next key
+        await sleep(2000);
       }
     }
 
     throw lastError;
 
   } catch (error) {
-    logger.error(`❌ SerpStack Fallback failed for "${businessName}": ${error.message}`);
+    logger.error(`❌ SerpStack Fallback permanently failed for "${businessName}": ${error.message}`);
     return { emails: [] };
   } finally {
-    // Always release lock — even if we errored
     releaseSerpstackLock();
   }
 };
