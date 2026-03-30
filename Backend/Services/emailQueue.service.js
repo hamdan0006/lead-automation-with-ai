@@ -22,9 +22,14 @@ const addEmailExtractionJob = async (leadId, websiteUrl, name) => {
       `extract-email-lead-${leadId}`,
       { leadId, websiteUrl, name },
       {
-        priority: 1, 
-        removeOnComplete: true, 
-        removeOnFail: 100 
+        priority: 1,
+        removeOnComplete: true,
+        removeOnFail: 100,
+        attempts: 3,              // Retry up to 3 times on failure
+        backoff: {
+          type: 'exponential',   // Wait 10s, then 20s, then 40s between retries
+          delay: 10000
+        }
       }
     );
 

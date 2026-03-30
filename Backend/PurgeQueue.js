@@ -3,33 +3,31 @@ const Redis = require('ioredis');
 const redis = new Redis('redis://localhost:6379');
 
 const mailQueue = new Queue('send-email', { connection: redis });
+const emailQueue = new Queue('email-extraction', { connection: redis });
+const mapsQueue = new Queue('maps-scraper', { connection: redis });
 
-async function purge() {
-  console.log('🧹 Purging send-email queue...');
-  
-  await mailQueue.drain(); // Clear waiting
-  console.log('✅ Waiting jobs drained.');
+const queues = [
+    { name: 'send-email', q: mailQueue },
+    { name: 'email-extraction', q: emailQueue },
+    { name: 'maps-scraper', q: mapsQueue }
+];
 
-  const failed = await mailQueue.getFailed();
-  for (const job of failed) {
-      await job.remove();
-  }
-  console.log(`✅ Removed ${failed.length} failed jobs.`);
+async function purgeAll() {
+    for (const { name, q } of queues) {
+        console.log(`🧹 Purging queue: ${name}...`);
+        
+        await q.drain(); // Clear all waiting
+        
+        // Remove failed, delayed, and completed jobs
+        const statuses = ['failed', 'delayed', 'completed'];
+        for (const status of statuses) {
+            const count = await q.clean(0, 1000, status);
+            console.log(`   ✅ Cleaned ${count} ${status} jobs.`);
+        }
+    }
 
-  const delayed = await mailQueue.getDelayed();
-  for (const job of delayed) {
-      await job.remove();
-  }
-  console.log(`✅ Removed ${delayed.length} delayed jobs.`);
-
-  const completed = await mailQueue.getCompleted();
-  for (const job of completed) {
-      await job.remove();
-  }
-  console.log(`✅ Removed ${completed.length} completed jobs.`);
-
-  await redis.quit();
-  console.log('🚀 Queue is now empty and fresh!');
+    console.log('🚀 All queues are now empty and fresh!');
+    await redis.quit();
 }
 
-purge().catch(console.error);
+purgeAll().catch(console.error);

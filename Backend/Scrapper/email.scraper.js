@@ -10,55 +10,7 @@ const logger = require('../utils/logger');
  */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Fetch website speed using check-host.net API
- * Returns the average response time from multiple global nodes in seconds
- */
-const getCheckHostSpeed = async (url) => {
-  try {
-    logger.info(`🛰️ Starting check-host.net speed test for: ${url}`);
-    
-    // Step 1: Initialize check
-    const { data: initData } = await axios.get(
-      `https://check-host.net/check-http?host=${encodeURIComponent(url)}&max_nodes=3`,
-      { headers: { 'Accept': 'application/json' } }
-    );
 
-    if (!initData || !initData.request_id) {
-        throw new Error('Failed to initialize check-host request');
-    }
-
-    // Step 2: Wait for nodes to respond (5s as per your recommendation)
-    await sleep(5000);
-
-    // Step 3: Fetch results
-    const { data: results } = await axios.get(
-      `https://check-host.net/check-result/${initData.request_id}`,
-      { headers: { 'Accept': 'application/json' } }
-    );
-
-    let totalMs = 0;
-    let nodeCount = 0;
-
-    // Calculate average from all nodes that responded
-    for (const [node, result] of Object.entries(results)) {
-      if (result?.[0] && result[0][0] === 1) { // 1 means success
-        const responseTimeMs = result[0][1] * 1000; // API returns seconds, convert to ms for precision
-        totalMs += responseTimeMs;
-        nodeCount++;
-      }
-    }
-
-    if (nodeCount === 0) return null;
-
-    const averageSeconds = parseFloat(((totalMs / nodeCount) / 1000).toFixed(2));
-    return averageSeconds;
-
-  } catch (error) {
-    logger.warn(`⚠️ check-host.net API failed for ${url}: ${error.message}. Falling back to internal timing.`);
-    return null;
-  }
-};
 
 /**
  * Email Scraper - Scrolls through a website and extracts found emails
@@ -88,6 +40,15 @@ const extractEmailsFromWebsite = async (url) => {
       return { emails: [], seoTitle: `Unreachable (${status})`, seoDescription: 'The website returned a server error and could not be scraped.' };
     }
 
+    // ⏱️ Capture load time IMMEDIATELY after page load — before any scroll/sleep distorts the timing
+    const loadTime = await page.evaluate(() => {
+      const timing = window.performance.timing;
+      const navStart = timing.navigationStart;
+      const loadEnd = timing.domContentLoadedEventEnd || timing.loadEventEnd || Date.now();
+      return parseFloat(((loadEnd - navStart) / 1000).toFixed(2));
+    });
+    logger.info(`⏱️ Page load time for ${url}: ${loadTime}s`);
+
     // 📜 Scroll through the website to trigger lazy loading or dynamic content
     logger.info(`📜 Scrolling website: ${url}`);
     await page.evaluate(async () => {
@@ -99,7 +60,7 @@ const extractEmailsFromWebsite = async (url) => {
           window.scrollBy(0, distance);
           totalHeight += distance;
 
-          if (totalHeight >= scrollHeight || totalHeight > 5000) { // Limit scroll to 5000px
+          if (totalHeight >= scrollHeight || totalHeight > 5000) {
             clearInterval(timer);
             resolve();
           }
@@ -129,27 +90,13 @@ const extractEmailsFromWebsite = async (url) => {
       const mailtoLinks = Array.from(document.querySelectorAll('a[href^="mailto:"]'))
         .map(a => a.href.replace('mailto:', '').split('?')[0]);
 
-      // ⏱️ Internal Performance fallback computation (Incognito visual load time)
-      const timing = window.performance.timing;
-      const localLoadTimeSeconds = ((timing.domContentLoadedEventEnd || Date.now()) - timing.navigationStart) / 1000;
-
       return {
         emails: [...foundEmails, ...mailtoLinks],
         seoTitle,
         seoDescription,
-        isResponsive: hasViewportMeta,
-        localLoadTime: parseFloat(localLoadTimeSeconds.toFixed(2))
+        isResponsive: hasViewportMeta
       };
     });
-
-    // ⚡ Fetch objective speed from check-host.net (or fallback to local timing)
-    let finalLoadTime = await getCheckHostSpeed(url);
-    if (!finalLoadTime) {
-      finalLoadTime = pageData.localLoadTime;
-      logger.info(`⏱️ Using internal load time: ${finalLoadTime}s (check-host API unavailable)`);
-    } else {
-      logger.info(`⚡ check-host.net Verified Load Time: ${finalLoadTime}s`);
-    }
 
     // Log the emails found
     const uniqueEmails = [...new Set(pageData.emails.map(e => e.toLowerCase().trim()))];
@@ -159,7 +106,7 @@ const extractEmailsFromWebsite = async (url) => {
       emails: uniqueEmails,
       seoTitle: pageData.seoTitle,
       seoDescription: pageData.seoDescription,
-      loadTime: finalLoadTime,
+      loadTime,
       isResponsive: pageData.isResponsive
     };
 
@@ -183,83 +130,130 @@ const extractEmailsFromWebsite = async (url) => {
  * @param {string} businessName - The name of the business (e.g., "Ocean International Realty")
  * @returns {Promise<string[]>} - A list of unique email addresses found in snippets
  */
+// ============================================================
+// SerpStack Rate-Limit Protection
+// Concurrency=3 means multiple leads can call SerpStack at once.
+// This semaphore allows only 1 SerpStack call at a time to
+// prevent 429 errors, while still processing leads in parallel.
+// ============================================================
+let serpstackBusy = false;
+const serpstackQueue = [];
+
+const acquireSerpstackLock = () => new Promise((resolve) => {
+  if (!serpstackBusy) {
+    serpstackBusy = true;
+    resolve();
+  } else {
+    serpstackQueue.push(resolve);
+  }
+});
+
+const releaseSerpstackLock = () => {
+  if (serpstackQueue.length > 0) {
+    const next = serpstackQueue.shift();
+    next(); // Hand lock to next waiter
+  } else {
+    serpstackBusy = false;
+  }
+};
+
 const searchEmailsOnWeb = async (businessName) => {
+  const apiKey = process.env.SERPSTACK_API_KEY;
+  const apiUrl = process.env.SERPSTACK_API_URL || 'https://api.serpstack.com/search';
+
+  if (!apiKey) {
+    logger.error('❌ SerpStack API Key is missing in .env!');
+    return { emails: [] };
+  }
+
+  // Serialize SerpStack calls to prevent 429 rate-limit errors
+  await acquireSerpstackLock();
+
   try {
-    const apiKey = process.env.SERPSTACK_API_KEY;
-    const apiUrl = process.env.SERPSTACK_API_URL || 'https://api.serpstack.com/search';
+    // Random jitter (1-3s) to spread concurrent requests that queued up back-to-back
+    const jitter = Math.floor(Math.random() * 2000) + 1000;
+    await sleep(jitter);
 
-    if (!apiKey) {
-      logger.error('❌ SerpStack API Key is missing in .env!');
-      return [];
-    }
-
-    // Step 1: Formulate clean query
-    const cleanName = businessName.replace(/[|;$%@"<>()+,]/g, " ").replace(/\s+/g, " ").trim();
-    const searchQuery = `${cleanName} email address`; 
+    const cleanName = businessName.replace(/[|;$%@"<>()+,]/g, ' ').replace(/\s+/g, ' ').trim();
+    const searchQuery = `${cleanName} email address`;
 
     logger.info(`🔍 Performing SerpStack API search for: "${searchQuery}"`);
 
-    // Step 2: Hit SerpStack API
-    const response = await axios.get(apiUrl, {
-      params: {
-        access_key: apiKey,
-        query: searchQuery,
-        num: 10 // Get top 10 results
+    // Retry up to 3 times with exponential backoff on 429
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await axios.get(apiUrl, {
+          params: {
+            access_key: apiKey,
+            query: searchQuery,
+            num: 10
+          }
+        });
+
+        const data = response.data;
+
+        if (!data || !data.organic_results) {
+          logger.warn(`⚠️ SerpStack returned no organic results for: "${searchQuery}"`);
+          return { emails: [] };
+        }
+
+        // Extract emails from results, snippets, and knowledge graph
+        const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+        const allEmails = new Set();
+
+        data.organic_results.forEach(res => {
+          const combinedText = `${res.title} ${res.snippet} ${res.url}`;
+          const matches = combinedText.match(emailRegex);
+          if (matches) matches.forEach(e => allEmails.add(e.toLowerCase()));
+        });
+
+        if (data.knowledge_graph) {
+          const matches = JSON.stringify(data.knowledge_graph).match(emailRegex);
+          if (matches) matches.forEach(e => allEmails.add(e.toLowerCase()));
+        }
+
+        const uniqueEmails = Array.from(allEmails)
+          .filter(e => !e.includes('sentry.io') && !e.includes('google.com') && !e.includes('bing.com'));
+
+        // Sort: best match first (name keywords > contact@ > info@)
+        const nameKeywords = businessName.toLowerCase().split(' ').filter(w => w.length > 3);
+        uniqueEmails.sort((a, b) => {
+          const aMatches = nameKeywords.filter(kw => a.includes(kw)).length;
+          const bMatches = nameKeywords.filter(kw => b.includes(kw)).length;
+          if (bMatches !== aMatches) return bMatches - aMatches;
+          const prefixes = ['info@', 'contact@', 'hello@'];
+          const aPref = prefixes.some(p => a.startsWith(p));
+          const bPref = prefixes.some(p => b.startsWith(p));
+          if (aPref && !bPref) return -1;
+          if (!aPref && bPref) return 1;
+          return 0;
+        });
+
+        logger.info(`✅ SerpStack sorted ${uniqueEmails.length} emails for "${businessName}". Best: ${uniqueEmails[0] || 'none'}`);
+        return { emails: uniqueEmails };
+
+      } catch (err) {
+        const is429 = err.response?.status === 429;
+        if (is429 && attempt < 3) {
+          const backoffMs = attempt * 5000; // 5s, 10s
+          logger.warn(`⚠️ SerpStack 429 for "${businessName}" (attempt ${attempt}/3). Retrying in ${backoffMs / 1000}s...`);
+          await sleep(backoffMs);
+          lastError = err;
+        } else {
+          throw err;
+        }
       }
-    });
-
-    const data = response.data;
-
-    if (!data || !data.organic_results) {
-      logger.warn(`⚠️ SerpStack returned no organic results for: "${searchQuery}"`);
-      return [];
     }
 
-    // Step 3: Extract emails from all results (titles, snippets, and URLs)
-    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-    const allEmails = new Set();
-
-    // Scan Organic Results
-    data.organic_results.forEach(res => {
-      const combinedText = `${res.title} ${res.snippet} ${res.url}`;
-      const matches = combinedText.match(emailRegex);
-      if (matches) matches.forEach(e => allEmails.add(e.toLowerCase()));
-    });
-
-    // Scan Knowledge Graph if present
-    if (data.knowledge_graph) {
-      const kgText = JSON.stringify(data.knowledge_graph);
-      const matches = kgText.match(emailRegex);
-      if (matches) matches.forEach(e => allEmails.add(e.toLowerCase()));
-    }
-
-    const uniqueEmails = Array.from(allEmails)
-      .filter(e => !e.includes('sentry.io') && !e.includes('google.com') && !e.includes('bing.com'));
-
-    // 🎯 Filtering logic: Find the "best match" email
-    const nameKeywords = businessName.toLowerCase().split(' ').filter(word => word.length > 3);
-    
-    uniqueEmails.sort((a, b) => {
-      const aMatches = nameKeywords.filter(kw => a.includes(kw)).length;
-      const bMatches = nameKeywords.filter(kw => b.includes(kw)).length;
-      if (bMatches !== aMatches) return bMatches - aMatches;
-      const prefixes = ['info@', 'contact@', 'hello@'];
-      const aPref = prefixes.some(p => a.startsWith(p));
-      const bPref = prefixes.some(p => b.startsWith(p));
-      if (aPref && !bPref) return -1;
-      if (!aPref && bPref) return 1;
-      return 0;
-    });
-
-    logger.info(`✅ SerpStack API sorted ${uniqueEmails.length} emails for "${businessName}". Best match: ${uniqueEmails[0] || 'none'}`);
-    
-    return {
-      emails: uniqueEmails
-    };
+    throw lastError;
 
   } catch (error) {
     logger.error(`❌ SerpStack Fallback failed for "${businessName}": ${error.message}`);
     return { emails: [] };
+  } finally {
+    // Always release lock — even if we errored
+    releaseSerpstackLock();
   }
 };
 

@@ -49,15 +49,18 @@ const addSendEmailJob = async (leadId, email, leadName, isFollowUp = false, dela
  * @param {object} leadData - full lead object
  * @param {string} aiContent - AI generated body content 
  * @param {boolean} isFollowUp - Is this a follow up email?
+ * @param {string} subjectOverride - Optional dynamic subject line
  */
-const sendEmail = async (to, leadData, aiContent, isFollowUp = false) => {
+const sendEmail = async (to, leadData, aiContent, isFollowUp = false, subjectOverride = null) => {
   try {
     
     let subject, body;
 
     const bizName = leadData.name || 'Your business';
 
-    if (isFollowUp) {
+    if (subjectOverride) {
+        subject = subjectOverride;
+    } else if (isFollowUp) {
         subject = `${bizName}: Following up`;
     } else {
         subject = `${bizName}: Quick question`;

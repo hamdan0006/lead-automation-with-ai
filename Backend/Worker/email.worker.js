@@ -15,10 +15,11 @@ const startEmailWorker = () => {
     async (job) => {
       const { leadId, websiteUrl, name } = job.data;
       let rawEmails = [];
-      let seoTitle = websiteUrl ? null : "No Website Found";
-      let seoDescription = websiteUrl ? null : "This lead does not have a website URL stored in the system.";
+      let seoTitle = websiteUrl ? null : 'No Website Found';
+      let seoDescription = websiteUrl ? null : 'This lead does not have a website URL stored in the system.';
       let loadTime = null;
       let isResponsive = null;
+      let processingFailed = false;
 
       logger.info(`🔍 Processing email extraction for Lead #${leadId} (${name})`);
 
@@ -147,23 +148,71 @@ const startEmailWorker = () => {
 
       } catch (error) {
         logger.error(`❌ Email Worker failed for lead ${leadId}: ${error.message}`);
-        throw error; // Let BullMQ handle retry if configured
+
+        // On final failure, mark lead as visited so it doesn't block the batch.
+        // BullMQ will retry (up to 3x), but if all retries exhaust, we need this
+        // to not block the batch-completion check forever.
+        if (job.attemptsMade >= (job.opts.attempts || 1) - 1) {
+          logger.warn(`⚠️ Lead #${leadId} exhausted all retries. Marking as visited to unblock batch.`);
+          await prisma.lead.update({
+            where: { id: leadId },
+            data: {
+              websiteVisited: true,
+              emailExtracted: true,  // Mark done (even if failed) so batch completion fires
+              status: 'NO_EMAIL_FOUND',
+              seoTitle: seoTitle || 'Scrape Failed',
+              seoDescription: `Failed after ${job.attemptsMade + 1} attempts: ${error.message.slice(0, 200)}`
+            }
+          }).catch(dbErr => logger.error(`❌ Could not mark lead #${leadId} as failed in DB: ${dbErr.message}`));
+
+          // Check batch completion after marking this lead done
+          try {
+            const failedLead = await prisma.lead.findUnique({ where: { id: leadId }, select: { scrapingJobId: true } });
+            if (failedLead?.scrapingJobId) {
+              const remaining = await prisma.lead.count({
+                where: { scrapingJobId: failedLead.scrapingJobId, emailExtracted: false }
+              });
+              if (remaining === 0) {
+                const totalLeads = await prisma.lead.count({ where: { scrapingJobId: failedLead.scrapingJobId } });
+                const leadsWithEmail = await prisma.lead.count({ where: { scrapingJobId: failedLead.scrapingJobId, email: { not: null } } });
+                logger.info(`🎉 Batch #${failedLead.scrapingJobId} fully processed (some leads failed). Total: ${totalLeads}, Emails: ${leadsWithEmail}.`);
+                await sendNotificationEmail(
+                  `Email Enrichment Job #${failedLead.scrapingJobId} Completed!`,
+                  `The lead enrichment process for Job #${failedLead.scrapingJobId} is now finished.\n\n🎯 Total Leads: ${totalLeads}\n📧 Emails Found: ${leadsWithEmail}\n✅ Success Rate: ${Math.round((leadsWithEmail / totalLeads) * 100)}%`
+                ).catch(err => logger.warn(`⚠️ Failed to send notification: ${err.message}`));
+              }
+            }
+          } catch (batchErr) {
+            logger.error(`❌ Batch completion check failed: ${batchErr.message}`);
+          }
+        } else {
+          // Still has retries left — re-throw so BullMQ will retry
+          throw error;
+        }
       }
     },
     {
       connection: redis,
-      concurrency: 1, // One by one as requested
-      lockDuration: 300000, 
-      stalledInterval: 60000
+      concurrency: 3,          // 3 parallel leads — one slow site won't block others
+      lockDuration: 120000,    // 2 min lock per job
+      stalledInterval: 30000   // Check for stalls every 30s
     }
   );
 
   worker.on('completed', (job) => {
-    logger.info(`Job ${job.id} completed!`);
+    logger.info(`✅ Email extraction job ${job.id} completed.`);
   });
 
   worker.on('failed', (job, err) => {
-    logger.error(`Job ${job.id} failed: ${err.message}`);
+    logger.warn(`⚠️ Email extraction job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts || 1}): ${err.message}`);
+  });
+
+  worker.on('stalled', (jobId) => {
+    logger.warn(`🔄 Email extraction job ${jobId} stalled — worker likely crashed or timed out. Requeueing automatically.`);
+  });
+
+  worker.on('error', (err) => {
+    logger.error(`❌ Email Worker encountered a critical error: ${err.message}`);
   });
 
   logger.info('🛰️ Email Extraction Worker started and ready for jobs.');

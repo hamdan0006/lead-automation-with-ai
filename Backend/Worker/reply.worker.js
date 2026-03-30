@@ -15,7 +15,8 @@ const checkReplies = async () => {
             port: 993,
             tls: true,
             tlsOptions: { rejectUnauthorized: false },
-            authTimeout: 3000,
+            authTimeout: 10000,
+            connTimeout: 10000,
         },
     };
 

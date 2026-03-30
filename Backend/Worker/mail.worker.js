@@ -37,38 +37,54 @@ const startMailWorker = () => {
           return;
         }
 
-        // --- SAFETY CHECK: IF REPLIED OR STOPPED, DO NOT SEND ---
+        // --- CORE STATUS VALIDATION (Smooth State Machine) ---
+        
+        // 1. General Blockers
         if (lead.receivedReply || lead.status === 'REPLIED' || lead.status === 'STOPPED') {
-          logger.info(`🚫 Skipping email for lead ${leadId} (${email}): Status is ${lead.status} or reply already received.`);
+          logger.info(`🚫 Skipping lead ${leadId} (${email}): Status is ${lead.status} or reply already received.`);
           return;
         }
 
-        // --- SAFETY CHECK: IF FOLLOW-UP IS DISABLED MANUALLY ---
-        if (job.data.isFollowUp && lead.followUp === false) {
-          logger.info(`🚫 Skipping follow-up for lead ${leadId}: Follow-up is disabled in database.`);
+        if (lead.status === 'FOLLOWED_UP') {
+          logger.info(`🚫 Skipping lead ${leadId}: Outreach campaign already completed (FOLLOWED_UP).`);
           return;
+        }
+
+        // 2. Initial Outreach Validation
+        if (!job.data.isFollowUp) {
+          if (lead.status !== 'QUEUED') {
+            logger.warn(`🚫 Skipping outreach for lead ${leadId}: Expected status 'QUEUED', but found '${lead.status}'.`);
+            return;
+          }
+        }
+
+        // 3. Follow-up Validation
+        if (job.data.isFollowUp) {
+          if (lead.status !== 'CONTACTED' || !lead.contacted) {
+            logger.warn(`🚫 Skipping follow-up for lead ${leadId}: Lead must be 'CONTACTED' before follow-up, current status: '${lead.status}'.`);
+            return;
+          }
+          if (lead.followUp === false) {
+             logger.info(`🚫 Skipping follow-up for lead ${leadId}: Follow-up is disabled in database.`);
+             return;
+          }
         }
 
         // Check for insecure website (http instead of https)
         const isInsecure = lead.website && lead.website.startsWith('http://');
 
-        // Generate AI Content
-        let aiContent = null;
+        // Generate AI Content (Dynamic Subject + Body)
+        let aiResult = null;
         logger.info(`🤖 Generating AI email for lead ${leadId} (${job.data.isFollowUp ? 'Follow-up' : 'Outreach'}) ${isInsecure ? '[INSECURE SITE ALERT]' : ''}`);
 
         if (job.data.isFollowUp) {
-          aiContent = await generateFollowUpBody(lead.name || 'there', lead.leadType, isInsecure);
+          aiResult = await generateFollowUpBody(lead);
         } else {
-          aiContent = await generateOutreachBody(
-            lead.name || 'Business Owner',
-            lead.leadType || 'business',
-            lead.city || 'your area',
-            isInsecure
-          );
+          aiResult = await generateOutreachBody(lead);
         }
 
-        // 1. Send the email with the full lead data and AI content
-        await sendEmail(email, lead, aiContent, job.data.isFollowUp || false);
+        // 1. Send the email with the full lead data, AI content, and dynamic subject
+        await sendEmail(email, lead, aiResult.body, job.data.isFollowUp || false, aiResult.subject);
 
         // 2. Update lead status to track contacts and schedule followups if needed
         if (!job.data.isFollowUp) {
@@ -86,8 +102,10 @@ const startMailWorker = () => {
           // Queue the follow-up email immediately with a BullMQ delay
           
           // const followUpDelayMs = 3 * 24 * 60 * 60 * 1000;
+          // const followUpDelayMs = 4 * 60 * 1000;
 
-          const followUpDelayMs = 4 * 60 * 1000;
+
+          const followUpDelayMs = 3 * 24 * 60 * 60 * 1000;
 
           logger.info(`⏰ Scheduling follow-up for lead ${leadId} in 3 days...`);
           await addSendEmailJob(leadId, email, lead.name, true, followUpDelayMs);
@@ -163,7 +181,7 @@ const startMailWorker = () => {
     {
       connection: redis,
       concurrency: 1, // One by one to avoid getting flagged as spam
-      lockDuration: 600000, // 👈 10 minutes (Prevents "stalling" while the worker sleeps to look human)
+      lockDuration: 420000, // 👈 7 minutes (Allows recovery if worker crashes during a 5min pause)
       stalledInterval: 60000 
     }
   );
