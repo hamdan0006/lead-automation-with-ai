@@ -14,10 +14,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Keep track of how many emails were sent in the current worker session
 let emailsSentInSession = 0;
 let nextLongPauseAt = getRandomInt(mailerRules.triggerLongPauseAfter.min, mailerRules.triggerLongPauseAfter.max);
+
 const startMailWorker = () => {
   const worker = new Worker(
     'send-email',
-    async (job) => {
+    async (job, token) => {
       const { leadId, email, leadName } = job.data;
 
       if (!email) {
@@ -25,8 +26,35 @@ const startMailWorker = () => {
         return;
       }
 
-      logger.info(`📧 Sending email to lead ${leadId}: ${email}`);
-      const { templateIds } = job.data;
+      // --- GMAIL DAILY SAFETY CHECK ---
+      const today = new Date().toISOString().split('T')[0];
+      const dailyKey = `mail_sent_daily:${today}`;
+      const dailyLimit = 85; // 🛑 Updated to 85 (Total across Outreach + Follow-ups)
+      
+      const currentSentToday = await redis.get(dailyKey).then(v => parseInt(v) || 0);
+      
+      if (currentSentToday >= dailyLimit) {
+        // Calculate delay until tomorrow at 6:00 PM PKT (Local)
+        const now = new Date();
+        const next6PM = new Date();
+        next6PM.setHours(18, 0, 0, 0); // 6:00 PM
+        
+        // If it's already past 6 PM today, move to tomorrow 6 PM
+        if (now >= next6PM) {
+          next6PM.setDate(next6PM.getDate() + 1);
+        }
+        
+        const delayMs = next6PM.getTime() - now.getTime();
+        const waitHours = Math.round(delayMs / 3600000);
+
+        logger.warn(`🛑 Quota reached (${dailyLimit}). Auto-delaying lead #${leadId} to tomorrow at 6:00 PM PKT (Waiting ~${waitHours}h).`);
+        
+        // Push the job back to the delayed queue
+        await job.moveToDelayed(Date.now() + delayMs, token);
+        return; 
+      }
+
+      logger.info(`📧 Sending email to lead ${leadId}: ${email} (Today: ${currentSentToday + 1}/${dailyLimit})`);
 
       try {
         // Fetch full lead data to get company/name
@@ -86,6 +114,11 @@ const startMailWorker = () => {
         // 1. Send the email with the full lead data, AI content, and dynamic subject
         await sendEmail(email, lead, aiResult.body, job.data.isFollowUp || false, aiResult.subject);
 
+        // 🟢 Success! Increment the daily counter in Redis
+        await redis.incr(dailyKey);
+        // Ensure key expires after 2 days to keep Redis clean
+        await redis.expire(dailyKey, 172800);
+
         // 2. Update lead status to track contacts and schedule followups if needed
         if (!job.data.isFollowUp) {
           await prisma.lead.update({
@@ -99,14 +132,7 @@ const startMailWorker = () => {
           });
           logger.info(`✅ Lead ${leadId} status updated to CONTACTED.`);
 
-          // Queue the follow-up email immediately with a BullMQ delay
-          
-          // const followUpDelayMs = 3 * 24 * 60 * 60 * 1000;
-          // const followUpDelayMs = 4 * 60 * 1000;
-
-
           const followUpDelayMs = 3 * 24 * 60 * 60 * 1000;
-
           logger.info(`⏰ Scheduling follow-up for lead ${leadId} in 3 days...`);
           await addSendEmailJob(leadId, email, lead.name, true, followUpDelayMs);
         } else {

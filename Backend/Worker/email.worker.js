@@ -5,6 +5,7 @@ const { extractEmailsFromWebsite, searchEmailsOnWeb } = require('../Scrapper/ema
 const { prisma } = require('../config/db');
 const { validateEmail } = require('../utils/email.validator');
 const { sendNotificationEmail } = require('../Services/mail.service');
+const { rankEmailsWithAI } = require('../Services/aiEmail.service');
 
 /**
  * BullMQ Worker for Email Extraction
@@ -14,92 +15,74 @@ const startEmailWorker = () => {
     'email-extraction',
     async (job) => {
       const { leadId, websiteUrl, name } = job.data;
-      let rawEmails = [];
       let seoTitle = websiteUrl ? null : 'No Website Found';
       let seoDescription = websiteUrl ? null : 'This lead does not have a website URL stored in the system.';
       let loadTime = null;
       let isResponsive = null;
-      let processingFailed = false;
 
       logger.info(`🔍 Processing email extraction for Lead #${leadId} (${name})`);
 
       try {
-        // Step 1: Try standard website scraping if a URL exists
+        let allCandidates = new Set();
+
+        // Step 1: Scrape website for emails
         if (websiteUrl) {
           logger.info(`🌐 Visiting website: ${websiteUrl}`);
           const scrapeResult = await extractEmailsFromWebsite(websiteUrl);
-          rawEmails = scrapeResult.emails;
+          scrapeResult.emails.forEach(e => allCandidates.add(e.toLowerCase().trim()));
+          
           seoTitle = scrapeResult.seoTitle;
           seoDescription = scrapeResult.seoDescription;
           loadTime = scrapeResult.loadTime;
           isResponsive = scrapeResult.isResponsive;
         }
 
-        // Step 2: Web Search Fallback ONLY if absolutely ZERO emails were found
-        // By accepting 'info@' or 'office@' emails without trying to find a better one via SerpStack,
-        // we drastically reduce API usage without compromising our ability to send the lead an email.
-        if (rawEmails.length === 0 && name) {
-          logger.info(`⚠️ No emails found via website. Firing SerpStack Web Search fallback for: "${name}"`);
+        // Step 2: Web Search Fallback (always run if few candidates found to ensure variety)
+        if (allCandidates.size < 3 && name) {
+          logger.info(`🔍 Firing SerpStack fallback for additional candidates: "${name}"`);
           const fallbackResult = await searchEmailsOnWeb(name);
-          // Merge unique emails
-          const combined = new Set([...rawEmails, ...fallbackResult.emails]);
-          rawEmails = Array.from(combined);
+          fallbackResult.emails.forEach(e => allCandidates.add(e.toLowerCase().trim()));
         }
 
-        // Step 3: Priority Scoring Logic
-        // We want to deprioritize info@ and prioritize contact@, hello@, or personalized emails
-        const nameKeywords = name.toLowerCase().split(' ').filter(word => word.length > 3);
-        
-        const getEmailScore = (email) => {
-          let score = 0;
-          const lowPriorityPrefixes = ['info@', 'office@', 'admin@', 'reception@', 'mail@'];
-          const highPriorityPrefixes = ['contact@', 'hello@', 'support@', 'sales@'];
-          
-          const isLowPriority = lowPriorityPrefixes.some(p => email.startsWith(p));
-          const isHighPriority = highPriorityPrefixes.some(p => email.startsWith(p));
-          
-          if (isHighPriority) score += 10;
-          if (isLowPriority) score -= 20; // Heavy penalty for info@
-          
-          // Bonus for matching business name (personalization)
-          const matches = nameKeywords.filter(kw => email.includes(kw)).length;
-          score += (matches * 5);
-          
-          return score;
-        };
+        const emailList = Array.from(allCandidates);
+        let chosenEmail = null;
+        let bestScore = -1; // -1: none, 0: possible, 1: highly likely, 2: excellent
 
-        // Sort by score (descending)
-        rawEmails.sort((a, b) => getEmailScore(b) - getEmailScore(a));
+        if (emailList.length > 0) {
+          // Step 3: 🧠 AI REASONING - Rank candidates by value (decision makers first)
+          logger.info(`🧠 AI Intelligence ranking ${emailList.length} candidates for "${name}"...`);
+          const rankedEmails = await rankEmailsWithAI(name, emailList).catch(() => emailList);
 
-        // Step 4: Concurrent Validation
-        // We will verify the top 5 candidates concurrently to save time and pick the best one
-        const candidatesToVerify = rawEmails.slice(0, 5);
-        logger.info(`🛡️ Concurrently verifying top ${candidatesToVerify.length} candidate emails...`);
+          // Step 4: SMTP Validation on top ranked candidates
+          const bizDomain = websiteUrl ? websiteUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] : null;
 
-        const verificationResults = await Promise.all(
-          candidatesToVerify.map(async (email) => {
-            const exists = await validateEmail(email);
-            return { email, exists };
-          })
-        );
+          // We check up to top 5 candidates derived from AI ranking
+          for (const email of rankedEmails.slice(0, 5)) {
+            const isValidated = await validateEmail(email);
+            let score = 0;
+            if (isValidated) {
+              score = 2; // Perfect Match (Verified Live)
+            } else if (bizDomain && email.includes(bizDomain)) {
+              score = 1; // High Likelihood (Domain Match)
+            }
 
-        let chosenEmail = verificationResults.find(r => r.exists)?.email || null;
-        let bestGuessEmail = rawEmails[0] || null; // Absolute fallback
-
-        // Final Logic: If no verified email found, but we have an info@ as fallback
-        if (!chosenEmail && bestGuessEmail) {
-          logger.warn(`⚠️ No candidate passed existence check for Lead #${leadId}. Using best match: ${bestGuessEmail}`);
-          chosenEmail = bestGuessEmail;
+            if (score > bestScore) {
+              chosenEmail = email;
+              bestScore = score;
+            }
+            if (bestScore === 2) break; // Break early if we found a verified winner!
+          }
         }
 
         // Step 5: Database Update
+        const isEnriched = !!chosenEmail;
         await prisma.lead.update({
           where: { id: leadId },
           data: {
             email: chosenEmail,
             emailExtracted: true,
             websiteVisited: true,
-            status: chosenEmail ? 'ENRICHED' : 'NO_EMAIL_FOUND',
+            status: isEnriched ? 'ENRICHED' : 'NO_EMAIL_FOUND',
             seoTitle,
             seoDescription,
             loadTime,
@@ -107,11 +90,14 @@ const startEmailWorker = () => {
           }
         });
 
-        if (chosenEmail) {
-          logger.info(`✅ Email saved for lead #${leadId}: ${chosenEmail}`);
+        if (isEnriched) {
+          const qualityStr = bestScore === 2 ? 'VERIFIED (Live)' : (bestScore === 1 ? 'AI LIKELY (Domain Match)' : 'POSSIBLE');
+          logger.info(`✅ Winning email saved for lead #${leadId}: ${chosenEmail} | Quality: ${qualityStr}`);
+        } else {
+          logger.warn(`❌ No working email found for lead #${leadId}.`);
         }
 
-        logger.info(`✅ Job ${job.id} for lead #${leadId} completed. Status: ${chosenEmail ? 'ENRICHED' : 'NO_EMAIL_FOUND'}`);
+        logger.info(`✅ Job ${job.id} for lead #${leadId} completed. Status: ${isEnriched ? 'ENRICHED' : 'NO_EMAIL_FOUND'}`);
 
         // 🔔 Check for Batch Completion
         const lead = await prisma.lead.findUnique({
@@ -149,23 +135,19 @@ const startEmailWorker = () => {
       } catch (error) {
         logger.error(`❌ Email Worker failed for lead ${leadId}: ${error.message}`);
 
-        // On final failure, mark lead as visited so it doesn't block the batch.
-        // BullMQ will retry (up to 3x), but if all retries exhaust, we need this
-        // to not block the batch-completion check forever.
         if (job.attemptsMade >= (job.opts.attempts || 1) - 1) {
           logger.warn(`⚠️ Lead #${leadId} exhausted all retries. Marking as visited to unblock batch.`);
           await prisma.lead.update({
             where: { id: leadId },
             data: {
               websiteVisited: true,
-              emailExtracted: true,  // Mark done (even if failed) so batch completion fires
+              emailExtracted: true,
               status: 'NO_EMAIL_FOUND',
               seoTitle: seoTitle || 'Scrape Failed',
               seoDescription: `Failed after ${job.attemptsMade + 1} attempts: ${error.message.slice(0, 200)}`
             }
           }).catch(dbErr => logger.error(`❌ Could not mark lead #${leadId} as failed in DB: ${dbErr.message}`));
 
-          // Check batch completion after marking this lead done
           try {
             const failedLead = await prisma.lead.findUnique({ where: { id: leadId }, select: { scrapingJobId: true } });
             if (failedLead?.scrapingJobId) {
@@ -186,16 +168,15 @@ const startEmailWorker = () => {
             logger.error(`❌ Batch completion check failed: ${batchErr.message}`);
           }
         } else {
-          // Still has retries left — re-throw so BullMQ will retry
           throw error;
         }
       }
     },
     {
       connection: redis,
-      concurrency: 3,          // 3 parallel leads — one slow site won't block others
-      lockDuration: 120000,    // 2 min lock per job
-      stalledInterval: 30000   // Check for stalls every 30s
+      concurrency: 3,
+      lockDuration: 120000,
+      stalledInterval: 30000
     }
   );
 
@@ -205,10 +186,6 @@ const startEmailWorker = () => {
 
   worker.on('failed', (job, err) => {
     logger.warn(`⚠️ Email extraction job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts || 1}): ${err.message}`);
-  });
-
-  worker.on('stalled', (jobId) => {
-    logger.warn(`🔄 Email extraction job ${jobId} stalled — worker likely crashed or timed out. Requeueing automatically.`);
   });
 
   worker.on('error', (err) => {

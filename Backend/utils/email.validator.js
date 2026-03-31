@@ -9,7 +9,13 @@ const logger = require('./logger');
  */
 const checkExistence = (email) => {
     return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+            logger.warn(`🕒 SMTP timeout for ${email} - skipping...`);
+            resolve(false);
+        }, 10000); // 10s Timeout
+
         emailExistence.check(email, (error, response) => {
+            clearTimeout(timeout);
             if (error) {
                 logger.debug(`📧 Existence check error for ${email}: ${error.message}`);
                 return resolve(false);

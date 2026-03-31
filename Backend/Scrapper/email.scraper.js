@@ -1,16 +1,11 @@
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-puppeteer.use(StealthPlugin());
 const axios = require('axios');
-
 const logger = require('../utils/logger');
+const { getBrowser } = require('../utils/browser.helper');
 
 /**
  * Utility to pause execution
  */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-
 
 /**
  * Email Scraper - Scrolls through a website and extracts found emails
@@ -19,20 +14,30 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 const extractEmailsFromWebsite = async (url) => {
   let browser = null;
+  let page = null;
   try {
-    logger.info(`🌐 Starting email extraction for: ${url}`);
+    logger.info(`🌐 Processing lead (Pooled Tab): ${url}`);
     
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+    // 🟠 POOLING: Get the shared browser instead of launching a new one
+    browser = await getBrowser();
+    page = await browser.newPage();
+    
+    // 🟢 Optimization: Block heavy resources (Images, CSS, Fonts)
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const type = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
     });
 
-    const page = await browser.newPage();
     // Simulate user agent
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Go to the website
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }); // 🕒 30s timeout
 
     if (response && !response.ok()) {
       const status = response.status();
@@ -121,7 +126,7 @@ const extractEmailsFromWebsite = async (url) => {
       isResponsive: null
     };
   } finally {
-    if (browser) await browser.close();
+    if (page) await page.close(); // 🟠 Close ONLY the tab, keep the browser alive!
   }
 };
 
@@ -164,18 +169,23 @@ let currentKeyIndex = 0;
 
 const getNextSerpstackKey = () => {
   const keys = [
-    process.env.SERPSTACK_API_KEY,
+    process.env.SERPSTACK_API_KEY1,
     process.env.SERPSTACK_API_KEY2,
     process.env.SERPSTACK_API_KEY3,
     process.env.SERPSTACK_API_KEY4,
-    process.env.SERPSTACK_API_KEY5
+    process.env.SERPSTACK_API_KEY5,
+    process.env.SERPSTACK_API_KEY6,
+    process.env.SERPSTACK_API_KEY7,
+    process.env.SERPSTACK_API_KEY8,
+    process.env.SERPSTACK_API_KEY9,
+    process.env.SERPSTACK_API_KEY10
   ].filter(k => k && k.trim() !== ''); // Clean out any missing or empty keys
 
   if (keys.length === 0) return null;
 
   const keyToUse = keys[currentKeyIndex % keys.length].trim();
   currentKeyIndex++; 
-  return keyToUse;
+  return { key: keyToUse, index: (currentKeyIndex - 1) % keys.length + 1 };
 };
 
 const searchEmailsOnWeb = async (businessName) => {
@@ -185,8 +195,8 @@ const searchEmailsOnWeb = async (businessName) => {
   await acquireSerpstackLock();
 
   try {
-    // Random jitter (1-3s) to spread requests that queued up back-to-back
-    const jitter = Math.floor(Math.random() * 2000) + 1000;
+    // Random jitter (1-2s) 
+    const jitter = Math.floor(Math.random() * 1000) + 1000;
     await sleep(jitter);
 
     const cleanName = businessName.replace(/[|;$%@"<>()+,]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -194,16 +204,16 @@ const searchEmailsOnWeb = async (businessName) => {
 
     let lastError;
     
-    // Attempt up to 5 times (enough to cycle through all keys if they all simultaneously fail or 429)
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      const apiKey = getNextSerpstackKey();
+    // Attempt up to 10 times (to cycle through all 10 keys)
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      const { key: apiKey, index: keyNumber } = getNextSerpstackKey();
       
       if (!apiKey) {
         logger.error('❌ SerpStack API Keys are all missing in .env!');
         return { emails: [] };
       }
 
-      logger.info(`🔍 Performing SerpStack API search for: "${searchQuery}" (Using Key #${(currentKeyIndex - 1) % 5 + 1} | Attempt ${attempt})`);
+      logger.info(`🔍 SerpStack search for: "${searchQuery}" (Using Key #${keyNumber} | Attempt ${attempt})`);
 
       try {
         const response = await axios.get(apiUrl, {
@@ -267,7 +277,7 @@ const searchEmailsOnWeb = async (businessName) => {
         // If it's a rate limit or a generic error, we just loop again and it will naturally use the NEXT API Key!
         const isRateLimit = err.response?.status === 429 || (err.message && err.message.includes('rate'));
         
-        logger.warn(`⚠️ SerpStack Failed using Key #${(currentKeyIndex - 1) % 5 + 1} (${isRateLimit ? 'Rate Limit/Error' : err.message}). Rotating to next key...`);
+        logger.warn(`⚠️ SerpStack Failed using Key #${keyNumber} (${isRateLimit ? 'Rate Limit/Error' : err.message}). Rotating to next key...`);
         
         // Small delay before slamming the API with the next key
         await sleep(2000);

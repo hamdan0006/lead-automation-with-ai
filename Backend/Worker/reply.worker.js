@@ -2,6 +2,7 @@ const imaps = require('imap-simple');
 const { simpleParser } = require('mailparser');
 const { prisma } = require('../config/db');
 const logger = require('../utils/logger');
+const { sendNotificationEmail } = require('../Services/mail.service');
 
 /**
  * Check for new replies in the Gmail inbox silently
@@ -20,8 +21,9 @@ const checkReplies = async () => {
         },
     };
 
+    let connection;
     try {
-        const connection = await imaps.connect(config);
+        connection = await imaps.connect(config);
         await connection.openBox('INBOX');
 
         // Only search for UNSEEN (New) messages
@@ -57,17 +59,29 @@ const checkReplies = async () => {
                         }
                     });
 
+                    // 📬 NOTIFICATION: Alert you immediately
+                    try {
+                        await sendNotificationEmail(
+                            `🔥 Lead Replied: ${lead.name || senderEmail}`,
+                            `Great news! You received a message from a lead.\n\nLead: ${lead.name}\nEmail: ${senderEmail}\n\nGo to your Gmail to check the message and reply back!`
+                        );
+                    } catch (notifyErr) {
+                        logger.warn(`⚠️ Failed to send reply notification: ${notifyErr.message}`);
+                    }
+
                     // Now mark as seen in Gmail so we don't process it again
                     await connection.addFlags(id, '\\Seen');
                 }
                 // If lead is null, we stay silent and do nothing.
             }
         }
-
-        connection.end();
     } catch (error) {
         // Log errors only (like auth issues), not individual message failures
         logger.error(`❌ Reply Polling Error: ${error.message}`);
+    } finally {
+        if (connection) {
+            connection.end();
+        }
     }
 };
 

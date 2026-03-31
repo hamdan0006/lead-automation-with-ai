@@ -4,7 +4,12 @@ const { PrismaPg } = require('@prisma/adapter-pg');
 const logger = require('../utils/logger');
 
 const connectionString = process.env.DATABASE_URL;
-const pool = new Pool({ connectionString });
+const pool = new Pool({ 
+  connectionString,
+  max: 50,                  // Increase max connections for parallel workers
+  idleTimeoutMillis: 30000,  // Close idle clients after 30 seconds
+  connectionTimeoutMillis: 2000, // Return an error after 2s if a connection cannot be established
+});
 const adapter = new PrismaPg(pool);
 
 const prisma = new PrismaClient({
