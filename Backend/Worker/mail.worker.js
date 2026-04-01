@@ -26,14 +26,19 @@ const startMailWorker = () => {
         return;
       }
 
-      // --- GMAIL DAILY SAFETY CHECK ---
+      // --- GMAIL DAILY SAFETY CHECK (ATOMIC RESERVATION) ---
       const today = new Date().toISOString().split('T')[0];
       const dailyKey = `mail_sent_daily:${today}`;
       const dailyLimit = 85; // 🛑 Updated to 85 (Total across Outreach + Follow-ups)
       
-      const currentSentToday = await redis.get(dailyKey).then(v => parseInt(v) || 0);
+      // 🟢 ATOMIC FIX: Increment FIRST to reserve a slot, then check
+      const currentSentToday = await redis.incr(dailyKey);
+      await redis.expire(dailyKey, 172800); // Ensure key expires after 2 days
       
-      if (currentSentToday >= dailyLimit) {
+      if (currentSentToday > dailyLimit) {
+        // Rollback the reservation since we exceeded limit
+        await redis.decr(dailyKey);
+        
         // Calculate delay until tomorrow at 6:00 PM PKT (Local)
         const now = new Date();
         const next6PM = new Date();
@@ -54,7 +59,7 @@ const startMailWorker = () => {
         return; 
       }
 
-      logger.info(`📧 Sending email to lead ${leadId}: ${email} (Today: ${currentSentToday + 1}/${dailyLimit})`);
+      logger.info(`📧 Sending email to lead ${leadId}: ${email} (Today: ${currentSentToday}/${dailyLimit})`);
 
       try {
         // Fetch full lead data to get company/name
@@ -114,11 +119,6 @@ const startMailWorker = () => {
         // 1. Send the email with the full lead data, AI content, and dynamic subject
         await sendEmail(email, lead, aiResult.body, job.data.isFollowUp || false, aiResult.subject);
 
-        // 🟢 Success! Increment the daily counter in Redis
-        await redis.incr(dailyKey);
-        // Ensure key expires after 2 days to keep Redis clean
-        await redis.expire(dailyKey, 172800);
-
         // 2. Update lead status to track contacts and schedule followups if needed
         if (!job.data.isFollowUp) {
           await prisma.lead.update({
@@ -158,17 +158,23 @@ const startMailWorker = () => {
           });
 
           if (remainingOutreach === 0) {
-            const totalLeads = await prisma.lead.count({
-                where: { scrapingJobId: lead.scrapingJobId, email: { not: null } }
-            });
+            // 🟢 ATOMIC FIX: Use Redis lock to prevent duplicate notifications
+            const lockKey = `batch-outreach-complete:${lead.scrapingJobId}`;
+            const locked = await redis.set(lockKey, '1', 'NX', 'EX', 60);
+            
+            if (locked) {
+              const totalLeads = await prisma.lead.count({
+                  where: { scrapingJobId: lead.scrapingJobId, email: { not: null } }
+              });
 
-            logger.info(`🎉 Outreach process for Job #${lead.scrapingJobId} is COMPLETED!`);
+              logger.info(`🎉 Outreach process for Job #${lead.scrapingJobId} is COMPLETED!`);
 
-            const { sendNotificationEmail } = require('../Services/mail.service');
-            await sendNotificationEmail(
-              `Outreach Job #${lead.scrapingJobId} Completed!`,
-              `The initial AI outreach campaign for Job #${lead.scrapingJobId} has finished.\n\n🎯 Total Leads Emailed: ${totalLeads}\n🚀 Next: Follow-ups are automatically scheduled for 3 days from now.`
-            ).catch(err => logger.warn(`⚠️ Failed to send outreach notification: ${err.message}`));
+              const { sendNotificationEmail } = require('../Services/mail.service');
+              await sendNotificationEmail(
+                `Outreach Job #${lead.scrapingJobId} Completed!`,
+                `The initial AI outreach campaign for Job #${lead.scrapingJobId} has finished.\n\n🎯 Total Leads Emailed: ${totalLeads}\n🚀 Next: Follow-ups are automatically scheduled for 3 days from now.`
+              ).catch(err => logger.warn(`⚠️ Failed to send outreach notification: ${err.message}`));
+            }
           }
         }
 
@@ -207,7 +213,7 @@ const startMailWorker = () => {
     {
       connection: redis,
       concurrency: 1, // One by one to avoid getting flagged as spam
-      lockDuration: 420000, // 👈 7 minutes (Allows recovery if worker crashes during a 5min pause)
+      lockDuration: 1800000, // 👈 30 minutes (Safely covers 12min gaps + 20min coffee breaks)
       stalledInterval: 60000 
     }
   );

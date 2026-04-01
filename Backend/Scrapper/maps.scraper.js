@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const { rules, getRandomInt } = require('../config/scraper.rules');
 const { parseAddress } = require('../utils/address.parser');
 const { sendNotificationEmail } = require('../Services/mail.service');
+const browserMonitor = require('../utils/browser.monitor');
 
 /**
  * Utility to pause execution
@@ -22,6 +23,7 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
     // 🟠 POOLING: Get the shared browser instead of launching a new one
     browser = await getBrowser();
     page = await browser.newPage();
+    browserMonitor.trackPageOpen();
     
     // Simulate realistic user agent
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -81,8 +83,16 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
         processedLinks.add(url);
 
         const detailPage = await browser.newPage();
+        browserMonitor.trackPageOpen();
         try {
-          await detailPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          const response = await detailPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          
+          // 🟢 FIX: Check HTTP status before extracting data
+          if (!response || response.status() >= 400) {
+            logger.warn(`⚠️ Skipping ${url}: HTTP ${response?.status() || 'unknown'}`);
+            continue;
+          }
+          
           await sleep(getRandomInt(2000, 4000));
 
           const leadData = await detailPage.evaluate(() => {
@@ -141,7 +151,10 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
         } catch (err) {
           logger.warn(`⚠️ Detail extraction skipped: ${err.message}`);
         } finally {
-          if (detailPage) await detailPage.close();
+          if (detailPage) {
+            await detailPage.close();
+            browserMonitor.trackPageClose();
+          }
         }
       }
 
@@ -175,7 +188,10 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
       }).catch(() => {});
     }
   } finally {
-    if (page) await page.close();
+    if (page) {
+      await page.close();
+      browserMonitor.trackPageClose();
+    }
   }
 };
 

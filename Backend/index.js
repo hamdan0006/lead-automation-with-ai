@@ -4,7 +4,7 @@ const cors = require('cors');
 
 // Import utilities and configurations
 const logger = require('./utils/logger');
-const { connectDB } = require('./config/db');
+const { connectDB, prisma } = require('./config/db');
 require('./config/redis'); // Triggers connection to Redis immediately
 
 // Import App Routes
@@ -57,14 +57,47 @@ const startServer = async () => {
   await connectDB();
   
   // Start BullMQ Workers
-  startEmailWorker();
-  startMailWorker();
-  startMapsWorker();
+  const emailWorker = startEmailWorker();
+  const mailWorker = startMailWorker();
+  const mapsWorker = startMapsWorker();
   startReplyWorker();
 
   app.listen(PORT, () => {
     logger.info(`🚀 Server is running on http://localhost:${PORT}`);
   });
+
+  // Graceful Shutdown Handler
+  const gracefulShutdown = async (signal) => {
+    logger.info(`🚦 ${signal} received. Starting graceful shutdown...`);
+    
+    try {
+      // Close workers first (stop accepting new jobs)
+      logger.info('🚫 Closing BullMQ workers...');
+      await Promise.all([
+        emailWorker?.close(),
+        mailWorker?.close(),
+        mapsWorker?.close()
+      ].filter(Boolean));
+      
+      // Close browser to free memory
+      const { closeBrowser } = require('./utils/browser.helper');
+      await closeBrowser();
+      
+      // Disconnect from database
+      logger.info('📦 Disconnecting from database...');
+      await prisma.$disconnect();
+      
+      logger.info('✅ Graceful shutdown completed.');
+      process.exit(0);
+    } catch (error) {
+      logger.error(`❌ Error during shutdown: ${error.message}`);
+      process.exit(1);
+    }
+  };
+
+  // Listen for termination signals
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 };
 
 startServer();

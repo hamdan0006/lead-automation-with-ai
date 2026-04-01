@@ -1,6 +1,8 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
 const { getBrowser } = require('../utils/browser.helper');
+const browserMonitor = require('../utils/browser.monitor');
+const redis = require('../config/redis');
 
 /**
  * Utility to pause execution
@@ -21,6 +23,7 @@ const extractEmailsFromWebsite = async (url) => {
     // 🟠 POOLING: Get the shared browser instead of launching a new one
     browser = await getBrowser();
     page = await browser.newPage();
+    browserMonitor.trackPageOpen();
     
     // 🟢 Optimization: Block heavy resources (Images, CSS, Fonts)
     await page.setRequestInterception(true);
@@ -126,7 +129,10 @@ const extractEmailsFromWebsite = async (url) => {
       isResponsive: null
     };
   } finally {
-    if (page) await page.close(); // 🟠 Close ONLY the tab, keep the browser alive!
+    if (page) {
+      await page.close(); // 🟠 Close ONLY the tab, keep the browser alive!
+      browserMonitor.trackPageClose();
+    }
   }
 };
 
@@ -163,11 +169,10 @@ const releaseSerpstackLock = () => {
 };
 
 // ============================================================
-// API Key Rotation Logic
+// API Key Rotation Logic (ATOMIC)
+// Uses Redis for thread-safe counter across all workers
 // ============================================================
-let currentKeyIndex = 0;
-
-const getNextSerpstackKey = () => {
+const getNextSerpstackKey = async () => {
   const keys = [
     process.env.SERPSTACK_API_KEY1,
     process.env.SERPSTACK_API_KEY2,
@@ -183,9 +188,14 @@ const getNextSerpstackKey = () => {
 
   if (keys.length === 0) return null;
 
-  const keyToUse = keys[currentKeyIndex % keys.length].trim();
-  currentKeyIndex++; 
-  return { key: keyToUse, index: (currentKeyIndex - 1) % keys.length + 1 };
+  // 🟢 ATOMIC FIX: Use Redis for atomic counter (thread-safe across workers)
+  const index = await redis.incr('serpstack:key:index');
+  const keyToUse = keys[(index - 1) % keys.length].trim();
+  
+  return { 
+    key: keyToUse, 
+    index: ((index - 1) % keys.length) + 1 
+  };
 };
 
 const searchEmailsOnWeb = async (businessName) => {
@@ -206,12 +216,14 @@ const searchEmailsOnWeb = async (businessName) => {
     
     // Attempt up to 10 times (to cycle through all 10 keys)
     for (let attempt = 1; attempt <= 10; attempt++) {
-      const { key: apiKey, index: keyNumber } = getNextSerpstackKey();
+      const keyData = await getNextSerpstackKey(); // 🟢 FIX: Added await
       
-      if (!apiKey) {
+      if (!keyData || !keyData.key) {
         logger.error('❌ SerpStack API Keys are all missing in .env!');
         return { emails: [] };
       }
+      
+      const { key: apiKey, index: keyNumber } = keyData;
 
       logger.info(`🔍 SerpStack search for: "${searchQuery}" (Using Key #${keyNumber} | Attempt ${attempt})`);
 

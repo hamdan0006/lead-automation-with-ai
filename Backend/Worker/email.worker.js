@@ -114,21 +114,27 @@ const startEmailWorker = () => {
           });
 
           if (remainingLeads === 0) {
-            // All leads in this batch are now enriched!
-            const totalLeads = await prisma.lead.count({ where: { scrapingJobId: lead.scrapingJobId } });
-            const leadsWithEmail = await prisma.lead.count({
-              where: {
-                scrapingJobId: lead.scrapingJobId,
-                email: { not: null }
-              }
-            });
-
-            logger.info(`🎉 Entire email enrichment process for Job #${lead.scrapingJobId} is COMPLETED!`);
+            // 🟢 ATOMIC FIX: Use Redis lock to prevent duplicate notifications
+            const lockKey = `batch-email-complete:${lead.scrapingJobId}`;
+            const locked = await redis.set(lockKey, '1', 'NX', 'EX', 60);
             
-            await sendNotificationEmail(
-              `Email Enrichment Job #${lead.scrapingJobId} Completed!`,
-              `The lead enrichment (email scraping) process for Job #${lead.scrapingJobId} is now finished.\n\n🎯 Total Leads: ${totalLeads}\n📧 Emails Found: ${leadsWithEmail}\n✅ Success Rate: ${Math.round((leadsWithEmail / totalLeads) * 100)}%`
-            ).catch(err => logger.warn(`⚠️ Failed to send enrichment notification: ${err.message}`));
+            if (locked) {
+              // All leads in this batch are now enriched!
+              const totalLeads = await prisma.lead.count({ where: { scrapingJobId: lead.scrapingJobId } });
+              const leadsWithEmail = await prisma.lead.count({
+                where: {
+                  scrapingJobId: lead.scrapingJobId,
+                  email: { not: null }
+                }
+              });
+
+              logger.info(`🎉 Entire email enrichment process for Job #${lead.scrapingJobId} is COMPLETED!`);
+              
+              await sendNotificationEmail(
+                `Email Enrichment Job #${lead.scrapingJobId} Completed!`,
+                `The lead enrichment (email scraping) process for Job #${lead.scrapingJobId} is now finished.\n\n🎯 Total Leads: ${totalLeads}\n📧 Emails Found: ${leadsWithEmail}\n✅ Success Rate: ${Math.round((leadsWithEmail / totalLeads) * 100)}%`
+              ).catch(err => logger.warn(`⚠️ Failed to send enrichment notification: ${err.message}`));
+            }
           }
         }
 
@@ -155,13 +161,19 @@ const startEmailWorker = () => {
                 where: { scrapingJobId: failedLead.scrapingJobId, emailExtracted: false }
               });
               if (remaining === 0) {
-                const totalLeads = await prisma.lead.count({ where: { scrapingJobId: failedLead.scrapingJobId } });
-                const leadsWithEmail = await prisma.lead.count({ where: { scrapingJobId: failedLead.scrapingJobId, email: { not: null } } });
-                logger.info(`🎉 Batch #${failedLead.scrapingJobId} fully processed (some leads failed). Total: ${totalLeads}, Emails: ${leadsWithEmail}.`);
-                await sendNotificationEmail(
-                  `Email Enrichment Job #${failedLead.scrapingJobId} Completed!`,
-                  `The lead enrichment process for Job #${failedLead.scrapingJobId} is now finished.\n\n🎯 Total Leads: ${totalLeads}\n📧 Emails Found: ${leadsWithEmail}\n✅ Success Rate: ${Math.round((leadsWithEmail / totalLeads) * 100)}%`
-                ).catch(err => logger.warn(`⚠️ Failed to send notification: ${err.message}`));
+                // 🟢 ATOMIC FIX: Use Redis lock to prevent duplicate notifications
+                const lockKey = `batch-email-complete:${failedLead.scrapingJobId}`;
+                const locked = await redis.set(lockKey, '1', 'NX', 'EX', 60);
+                
+                if (locked) {
+                  const totalLeads = await prisma.lead.count({ where: { scrapingJobId: failedLead.scrapingJobId } });
+                  const leadsWithEmail = await prisma.lead.count({ where: { scrapingJobId: failedLead.scrapingJobId, email: { not: null } } });
+                  logger.info(`🎉 Batch #${failedLead.scrapingJobId} fully processed (some leads failed). Total: ${totalLeads}, Emails: ${leadsWithEmail}.`);
+                  await sendNotificationEmail(
+                    `Email Enrichment Job #${failedLead.scrapingJobId} Completed!`,
+                    `The lead enrichment process for Job #${failedLead.scrapingJobId} is now finished.\n\n🎯 Total Leads: ${totalLeads}\n📧 Emails Found: ${leadsWithEmail}\n✅ Success Rate: ${Math.round((leadsWithEmail / totalLeads) * 100)}%`
+                  ).catch(err => logger.warn(`⚠️ Failed to send notification: ${err.message}`));
+                }
               }
             }
           } catch (batchErr) {

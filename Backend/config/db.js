@@ -7,8 +7,8 @@ const connectionString = process.env.DATABASE_URL;
 const pool = new Pool({ 
   connectionString,
   max: 50,                  // Increase max connections for parallel workers
-  idleTimeoutMillis: 30000,  // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 2000, // Return an error after 2s if a connection cannot be established
+  idleTimeoutMillis: 60000,  // Keep idle connections for 1 minute (reduced churn)
+  connectionTimeoutMillis: 10000, // Wait 10 seconds before throwing error (prevents cascade failures)
 });
 const adapter = new PrismaPg(pool);
 

@@ -1,6 +1,11 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// 🟢 SECURITY FIX: Fail fast if JWT_SECRET is missing or using default
+if (!JWT_SECRET || JWT_SECRET === 'your_super_secret_key') {
+  throw new Error('❌ FATAL: JWT_SECRET must be set in .env file for security. Never use default values in production.');
+}
 
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
