@@ -21,9 +21,9 @@ export default function UserProfiles() {
         <div className="space-y-6">
           <UserMetaCard />
           <UserInfoCard />
-          <LinkedInProfileCard />
+          {/* <LinkedInProfileCard />
           <UserAudienceCard />
-          <UserSecurityCard />
+          <UserSecurityCard /> */}
         </div>
       </div>
     </>

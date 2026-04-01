@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Workflow, Search, RefreshCw, Eye, Plus, X } from 'lucide-react';
+import { Workflow, Search, RefreshCw, Eye, Plus, X, MapPin } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import useAuthStore from '../../stores/useAuthStore';
 import Flowbtn from '../../components/ui/flowbtns/Flowbtn';
@@ -11,6 +11,9 @@ interface ScrapingJob {
   status: string;
   results: number;
   leadType: string | null;
+  city: string;
+  state: string;
+  country: string;
   createdAt: string;
 }
 
@@ -21,6 +24,7 @@ const Leads: React.FC = () => {
     const [jobs, setJobs] = useState<ScrapingJob[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
 
     // Modal state for triggering new jobs
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -28,21 +32,29 @@ const Leads: React.FC = () => {
     const [newJobLeadType, setNewJobLeadType] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const fetchJobs = async () => {
+    const fetchJobs = async (page = 1) => {
         setIsLoading(true);
         try {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-            const response = await fetch(`${apiUrl}/scraper/jobs`, {
+            const response = await fetch(`${apiUrl}/scraper/jobs?page=${page}&limit=10`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
             });
 
-            if (!response.ok) throw new Error('Failed to fetch jobs');
+            if (!response.ok) throw new Error('Failed to fetch scraping batches');
             
             const data = await response.json();
             if (data.success) {
                 setJobs(data.jobs);
+                if (data.pagination) {
+                    setPagination({
+                        page: data.pagination.page,
+                        limit: data.pagination.limit,
+                        total: data.pagination.total,
+                        totalPages: data.pagination.totalPages
+                    });
+                }
             }
         } catch (error) {
             console.error(error);
@@ -94,17 +106,42 @@ const Leads: React.FC = () => {
         }
     };
 
-    const filteredJobs = jobs.filter(job => 
-        job.id.toString().includes(searchTerm) || 
-        (job.leadType && job.leadType.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const getKeyword = (url: string) => {
+        try {
+            const parts = url.split('search/');
+            if (parts.length > 1) {
+                const query = parts[1].split('/')[0];
+                return decodeURIComponent(query).replace(/\+/g, ' ');
+            }
+            return 'N/A';
+        } catch (e) {
+            return 'N/A';
+        }
+    };
+
+    const filteredJobs = jobs.filter(job => {
+        const keyword = getKeyword(job.url).toLowerCase();
+        const matchesSearch = job.id.toString().includes(searchTerm) || 
+                             (job.leadType && job.leadType.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                             keyword.includes(searchTerm.toLowerCase()) ||
+                             job.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                             job.state.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                             job.country.toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesSearch;
+    });
+
+    const handlePageChange = (newPage: number) => {
+        if (newPage >= 1 && newPage <= pagination.totalPages) {
+            fetchJobs(newPage);
+        }
+    };
 
     return (
         <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen relative">
             
             {/* NEW BATCH MODAL OVERLAY */}
             {isMenuOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
                         <div className="flex justify-between items-center p-5 border-b border-gray-200 dark:border-gray-700">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -122,7 +159,7 @@ const Leads: React.FC = () => {
                                     placeholder="e.g. top realtors in Miami Beach Florida" 
                                     value={newJobQuery}
                                     onChange={(e) => setNewJobQuery(e.target.value)}
-                                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                                     required
                                 />
                             </div>
@@ -133,7 +170,7 @@ const Leads: React.FC = () => {
                                     placeholder="e.g. Real Estate" 
                                     value={newJobLeadType}
                                     onChange={(e) => setNewJobLeadType(e.target.value)}
-                                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                    className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                                 />
                                 <p className="text-xs text-gray-500 mt-1">This tags the batch so you can filter it later.</p>
                             </div>
@@ -167,11 +204,11 @@ const Leads: React.FC = () => {
                             placeholder="Search by ID or Lead Type..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                         />
                     </div>
                     <button 
-                        onClick={fetchJobs}
+                        onClick={() => fetchJobs()}
                         className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                         <RefreshCw className="w-4 h-4 text-gray-600 dark:text-gray-400" />
@@ -186,12 +223,13 @@ const Leads: React.FC = () => {
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Job ID</th>
+                             <tr className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Batch ID</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lead Type</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Target Region</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Keyword</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Leads</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
                             </tr>
                         </thead>
@@ -232,6 +270,25 @@ const Leads: React.FC = () => {
                                                 </span>
                                             </div>
                                         </td>
+                                         <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-0.5">
+                                                <div className="flex items-center gap-1.5 text-sm text-gray-900 dark:text-gray-100 font-medium">
+                                                    <MapPin className="w-3.5 h-3.5 text-red-500" />
+                                                    {job.city !== 'N/A' ? job.city : 'Various'}
+                                                </div>
+                                                <div className="text-xs text-gray-500 ml-5">
+                                                    {[job.state, job.country].filter(s => s && s !== 'N/A').join(', ') || 'Online/Global'}
+                                                </div>
+                                            </div>
+                                        </td>
+                                         <td className="px-6 py-4">
+                                            <div className="flex items-center">
+                                                <Search className="w-3.5 h-3.5 text-gray-400 mr-2" />
+                                                <span className="text-sm text-gray-600 dark:text-gray-300 italic">
+                                                    "{getKeyword(job.url)}"
+                                                </span>
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4">
                                             <div className="text-sm text-gray-900 dark:text-white font-medium">{job.results}</div>
                                             <div className="text-xs text-gray-500">Extracted leads</div>
@@ -248,11 +305,6 @@ const Leads: React.FC = () => {
                                                 {job.status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="text-sm text-gray-600 dark:text-gray-300">
-                                                {new Date(job.createdAt).toLocaleDateString()}
-                                            </div>
-                                        </td>
                                         <td className="px-6 py-4 text-right">
                                             <button 
                                                 onClick={() => navigate(`/start-scraping/${job.id}`)}
@@ -266,6 +318,37 @@ const Leads: React.FC = () => {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex flex-col sm:flex-row items-center justify-between gap-4 mt-auto">
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400 text-center sm:text-left">
+                        Showing <span className="text-gray-900 dark:text-white">{(pagination.page - 1) * pagination.limit + (jobs.length > 0 ? 1 : 0)}</span> to <span className="text-gray-900 dark:text-white">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 dark:text-white">{pagination.total}</span> batches
+                    </p>
+                    
+                    <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1 shadow-sm overflow-x-auto w-full sm:w-auto">
+                        <button
+                            disabled={pagination.page === 1}
+                            onClick={() => handlePageChange(pagination.page - 1)}
+                            className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-40 disabled:hover:bg-transparent transition-colors flex-1 sm:flex-none text-center"
+                        >
+                            Prev
+                        </button>
+                        
+                        <div className="hidden sm:flex items-center px-2">
+                            <span className="text-sm font-semibold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20 px-3 py-1 rounded-md">
+                                Page {pagination.page} / {pagination.totalPages}
+                            </span>
+                        </div>
+                        
+                        <button
+                            disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}
+                            onClick={() => handlePageChange(pagination.page + 1)}
+                            className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-40 disabled:hover:bg-transparent transition-colors flex-1 sm:flex-none text-center"
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

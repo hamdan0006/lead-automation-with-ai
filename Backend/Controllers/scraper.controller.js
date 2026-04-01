@@ -7,7 +7,7 @@ const mailService = require('../Services/mail.service');
 const verifyPuppeteer = async (req, res) => {
   try {
     const title = await scraperService.performPuppeteerVerification();
-    
+
     res.status(200).json({
       success: true,
       message: 'Puppeteer is working successfully in the backend!',
@@ -26,7 +26,7 @@ const verifyPuppeteer = async (req, res) => {
 const triggerMapsScraper = async (req, res) => {
   try {
     const { query, leadType } = req.body;
-    
+
     if (!query) {
       return res.status(400).json({ success: false, message: 'Query is required.' });
     }
@@ -49,7 +49,7 @@ const triggerEmailExtraction = async (req, res) => {
     const { jobId } = req.body;
     const enqueuedCount = await emailQueueService.enqueueLeadsByJobId(jobId);
 
-    const message = jobId 
+    const message = jobId
       ? `Successfully enqueued ${enqueuedCount} leads from job #${jobId} for email extraction.`
       : `Successfully enqueued ${enqueuedCount} leads for email extraction.`;
 
@@ -69,7 +69,7 @@ const triggerEmailOutreach = async (req, res) => {
     const { jobId } = req.body;
     const enqueuedCount = await mailService.enqueueLeadsForOutreach(jobId);
 
-    let message = jobId 
+    let message = jobId
       ? `Successfully enqueued ${enqueuedCount} leads from job #${jobId} for AI outreach.`
       : `Successfully enqueued ${enqueuedCount} leads for AI outreach.`;
 
@@ -101,7 +101,7 @@ const listTemplates = async (req, res) => {
 const createTemplate = async (req, res) => {
   try {
     const { name, subject, body } = req.body;
-    
+
     if (!name || !subject || !body) {
       return res.status(400).json({ success: false, message: 'Name, subject, and body are required.' });
     }
@@ -137,7 +137,7 @@ const updateTemplate = async (req, res) => {
 const deleteTemplate = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     await prisma.emailTemplate.delete({
       where: { id: parseInt(id) }
     });
@@ -164,7 +164,7 @@ const getLeadsByJobId = async (req, res) => {
       whereClause.leadType = leadType;
     }
 
-    const [leads, totalCount] = await Promise.all([
+    const [leads, totalCount, queuedCount] = await Promise.all([
       prisma.lead.findMany({
         where: whereClause, // 👈 Apply base filter
         skip,
@@ -173,6 +173,12 @@ const getLeadsByJobId = async (req, res) => {
       }),
       prisma.lead.count({
         where: whereClause // 👈 Apply base filter
+      }),
+      prisma.lead.count({
+        where: {
+          ...whereClause,
+          status: 'QUEUED'
+        }
       })
     ]);
 
@@ -181,6 +187,7 @@ const getLeadsByJobId = async (req, res) => {
       data: leads,
       pagination: {
         total: totalCount,
+        queued: queuedCount,
         page,
         limit,
         totalPages: Math.ceil(totalCount / limit)
@@ -195,22 +202,131 @@ const getLeadsByJobId = async (req, res) => {
 
 const getJobs = async (req, res) => {
   try {
-    const jobs = await prisma.scrapingJob.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: { leads: true }
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const [jobs, totalCount] = await Promise.all([
+      prisma.scrapingJob.findMany({
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          leads: {
+            select: {
+              city: true,
+              state: true,
+              country: true,
+              status: true,
+              email: true,
+              receivedReply: true,
+              lastEmailedAt: true
+            }
+          }
         }
+      }),
+      prisma.scrapingJob.count()
+    ]);
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+
+    // Calculate Granular Outreach Stats for Dynamic Charting (System-wide)
+    const allRecentLeads = await prisma.lead.findMany({
+      where: {
+        lastEmailedAt: {
+          gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        }
+      },
+      select: { lastEmailedAt: true }
+    });
+
+    const hourlyOutreach = new Array(24).fill(0);
+    const dailyOutreach = new Array(7).fill(0);
+
+    allRecentLeads.forEach(lead => {
+      const emailDate = new Date(lead.lastEmailedAt);
+      const diffMs = now.getTime() - emailDate.getTime();
+      
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      if (diffHours >= 0 && diffHours < 24) {
+        hourlyOutreach[23 - diffHours]++;
+      }
+
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      if (diffDays >= 0 && diffDays < 7) {
+        dailyOutreach[6 - diffDays]++;
       }
     });
 
-    const formattedJobs = jobs.map(job => ({
-      ...job,
-      results: job._count.leads, // Show actual leads saved instead of processed attempts
-      _count: undefined // Clean up payload
-    }));
+    // Monthly Outreach Growth
+    const allEmailedLeads = await prisma.lead.findMany({
+      where: {
+        lastEmailedAt: {
+          gte: new Date(`${currentYear}-01-01`),
+          lte: new Date(`${currentYear}-12-31`)
+        }
+      },
+      select: { lastEmailedAt: true }
+    });
 
-    res.status(200).json({ success: true, jobs: formattedJobs });
+    const monthlyOutreach = new Array(12).fill(0);
+    allEmailedLeads.forEach(lead => {
+      const month = new Date(lead.lastEmailedAt).getMonth();
+      monthlyOutreach[month]++;
+    });
+
+    const formattedJobs = jobs.map(job => {
+      const firstLead = job.leads && job.leads.length > 0 ? job.leads[0] : {};
+      const totalLeads = job.leads.length;
+      const leadsWithEmail = job.leads.filter(l => l.email !== null && l.email !== '').length;
+
+      const outreachLeads = job.leads.filter(l => ['CONTACTED', 'FOLLOW_UP', 'REPLIED'].includes(l.status)).length;
+      const contactedToday = job.leads.filter(l => {
+        if (!l.lastEmailedAt) return false;
+        const diff = (now.getTime() - new Date(l.lastEmailedAt).getTime()) / (1000 * 60 * 60);
+        return diff <= 24;
+      }).length;
+
+      const contactedWeekly = job.leads.filter(l => {
+        if (!l.lastEmailedAt) return false;
+        const diff = (now.getTime() - new Date(l.lastEmailedAt).getTime()) / (1000 * 60 * 60);
+        return diff <= 168;
+      }).length;
+
+      const replyCount = job.leads.filter(l => l.receivedReply).length;
+
+      return {
+        ...job,
+        results: totalLeads,
+        leadsWithEmail,
+        contactedCount: outreachLeads,
+        contactedToday,
+        contactedWeekly,
+        replyCount,
+        replyRate: totalLeads > 0 ? Math.round((replyCount / totalLeads) * 100) : 0,
+        isAutomationComplete: totalLeads > 0 && outreachLeads >= totalLeads,
+        leads: undefined, // Clear the leads array to keep the payload light
+        city: firstLead.city || 'N/A',
+        state: firstLead.state || 'N/A',
+        country: firstLead.country || 'N/A'
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      jobs: formattedJobs,
+      monthlyOutreach,
+      hourlyOutreach,
+      dailyOutreach,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        totalPages: Math.ceil(totalCount / limit)
+      }
+    });
+
   } catch (error) {
     logger.error(`Error fetching jobs: ${error.message}`);
     res.status(500).json({ success: false, message: 'Failed to fetch jobs.' });

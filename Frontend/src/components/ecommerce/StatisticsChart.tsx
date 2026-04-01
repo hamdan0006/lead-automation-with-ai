@@ -2,10 +2,10 @@ import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 
 
-export default function StatisticsChart({ data = [], title = "Automation Trends" }: { data?: number[]; title?: string }) {
+export default function StatisticsChart({ data = [], labels = [], title = "Automation Trends" }: { data?: number[]; labels?: string[]; title?: string }) {
   // Check if there's any actual data (non-zero values)
-  const hasData = data.length > 0 && data.some(value => value > 0);
-  const chartData = data.length > 0 ? data : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const chartData = data && data.length > 0 ? data : new Array(labels.length || 12).fill(0);
+  const hasData = chartData.some(value => value > 0);
 
   const options: ApexOptions = {
     legend: {
@@ -76,7 +76,7 @@ export default function StatisticsChart({ data = [], title = "Automation Trends"
     },
     xaxis: {
       type: "category",
-      categories: [
+      categories: labels.length > 0 ? labels : [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
       ],
       axisBorder: {

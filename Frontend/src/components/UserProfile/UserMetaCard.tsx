@@ -4,7 +4,6 @@ import { Modal } from "../ui/modal";
 import Button from "../ui/button/Button";
 import Input from "../form/input/InputField";
 import Label from "../form/Label";
-import Badge from "../ui/badge/Badge";
 import useAuthStore from "../../stores/useAuthStore";
 import toast from "react-hot-toast";
 
@@ -12,17 +11,6 @@ export default function UserMetaCard() {
   const { isOpen, closeModal } = useModal();
   const { user, setUser } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
-  const [isResending, setIsResending] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-
-  // Cooldown timer
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    if (resendCooldown > 0) {
-      timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
-    }
-    return () => clearTimeout(timer);
-  }, [resendCooldown]);
 
   // We are focusing on personal info update here as per api
   const [formData, setFormData] = useState({
@@ -80,32 +68,6 @@ export default function UserMetaCard() {
     }
   };
 
-  const handleResendVerification = async () => {
-    if (!user?.email || resendCooldown > 0) return;
-
-    setIsResending(true);
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://192.168.1.56:3000';
-      const response = await fetch(`${apiUrl}/api/auth/resend-verification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email }),
-      });
-
-      if (response.ok) {
-        setResendCooldown(30);
-        toast.success("Verification email resent!");
-      } else {
-        const data = await response.json();
-        toast.error(data.message || "Failed to resend email");
-      }
-    } catch (err) {
-      toast.error("An error occurred. Please try again.");
-    } finally {
-      setIsResending(false);
-    }
-  };
-
   const getInitials = () => {
     const first = user?.firstName?.[0] || user?.username?.[0] || 'U';
     return first.toUpperCase();
@@ -114,14 +76,6 @@ export default function UserMetaCard() {
   const getFullName = () => {
     if (user?.firstName && user?.lastName) return `${user.firstName} ${user.lastName}`;
     return user?.username || 'User';
-  };
-
-  const getPlanColor = (plan?: string) => {
-    const p = plan?.toLowerCase() || '';
-    if (p.includes('trial')) return 'warning';
-    if (p.includes('pro')) return 'success';
-    if (p.includes('plus')) return 'info';
-    return 'light';
   };
 
   return (
@@ -141,30 +95,9 @@ export default function UserMetaCard() {
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   @{user?.username || 'user'}
                 </p>
-                <div className="hidden h-3.5 w-px bg-gray-300 dark:bg-gray-700 xl:block"></div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="light" color={user?.emailVerified ? "success" : "warning"} size="sm">
-                    {user?.emailVerified ? "Verified" : "Unverified"}
-                  </Badge>
-                  {!user?.emailVerified && (
-                    <button
-                      onClick={handleResendVerification}
-                      disabled={isResending || resendCooldown > 0}
-                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-50 transition-colors cursor-pointer`}
-                    >
-                      {isResending ? "Sending..." : resendCooldown > 0 ? `Wait ${resendCooldown}s` : "Verify Now"}
-                    </button>
-                  )}
-                  <Badge variant="light" color={getPlanColor(user?.plan)} size="sm">
-                    {user?.plan || "Free"} Plan
-                  </Badge>
-                </div>
               </div>
             </div>
-
-
           </div>
-
         </div>
       </div>
       <Modal isOpen={isOpen} onClose={closeModal} className="max-w-[700px] m-4">

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle, Search, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import useAuthStore from '../../stores/useAuthStore';
 
@@ -35,13 +35,20 @@ const LeadDetail: React.FC = () => {
   
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [filterLeadType, setFilterLeadType] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1 });
 
-  const fetchLeads = async (page = 1) => {
+  const fetchLeads = async (page = 1, leadType = filterLeadType) => {
     setIsLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/scraper/jobs/${jobId}/leads?page=${page}&limit=50`, {
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: '50'
+      });
+      if (leadType) queryParams.append('leadType', leadType);
+
+      const response = await fetch(`${apiUrl}/scraper/jobs/${jobId}/leads?${queryParams.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -67,6 +74,17 @@ const LeadDetail: React.FC = () => {
     }
   };
 
+  const handleFilterChange = (val: string) => {
+    setFilterLeadType(val);
+    fetchLeads(1, val);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+        fetchLeads(newPage);
+    }
+  };
+
   useEffect(() => {
     if (token && jobId) {
       fetchLeads(1);
@@ -82,15 +100,36 @@ const LeadDetail: React.FC = () => {
         >
           <ArrowLeft className="w-4 h-4" /> Back to Batches
         </button>
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-blue-500/10 dark:bg-blue-500/20 rounded-xl flex items-center justify-center border border-blue-500/20">
-            <Users className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-500/10 dark:bg-blue-500/20 rounded-xl flex items-center justify-center border border-blue-500/20">
+              <Users className="w-6 h-6 text-blue-500 dark:text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Batch #{jobId} Detail</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {pagination.total} leads found in this execution
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Batch #{jobId} Detail</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {pagination.total} leads found in this execution
-            </p>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Filter by Lead Type..."
+                value={filterLeadType}
+                onChange={(e) => handleFilterChange(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button 
+              onClick={() => fetchLeads(1)}
+              className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+            </button>
           </div>
         </div>
       </div>
@@ -206,29 +245,35 @@ const LeadDetail: React.FC = () => {
         </div>
 
         {/* Pagination Controls */}
-        {pagination.totalPages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <p className="text-sm text-gray-500">
-              Showing {(pagination.page - 1) * pagination.limit + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} leads
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex flex-col sm:flex-row items-center justify-between gap-4 mt-auto">
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-400 text-center sm:text-left">
+                Showing <span className="text-gray-900 dark:text-white">{(pagination.page - 1) * pagination.limit + (leads.length > 0 ? 1 : 0)}</span> to <span className="text-gray-900 dark:text-white">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 dark:text-white">{pagination.total}</span> leads
             </p>
-            <div className="flex gap-2">
-              <button
-                disabled={pagination.page === 1}
-                onClick={() => fetchLeads(pagination.page - 1)}
-                className="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md text-sm disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                disabled={pagination.page === pagination.totalPages}
-                onClick={() => fetchLeads(pagination.page + 1)}
-                className="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md text-sm disabled:opacity-50"
-              >
-                Next
-              </button>
+            
+            <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1 shadow-sm overflow-x-auto w-full sm:w-auto">
+                <button
+                    disabled={pagination.page === 1}
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-40 disabled:hover:bg-transparent transition-colors flex-1 sm:flex-none text-center"
+                >
+                    Prev
+                </button>
+                
+                <div className="hidden sm:flex items-center px-2">
+                    <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-md">
+                        Page {pagination.page} / {pagination.totalPages}
+                    </span>
+                </div>
+                
+                <button
+                    disabled={pagination.page === pagination.totalPages || pagination.totalPages === 0}
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-40 disabled:hover:bg-transparent transition-colors flex-1 sm:flex-none text-center"
+                >
+                    Next
+                </button>
             </div>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

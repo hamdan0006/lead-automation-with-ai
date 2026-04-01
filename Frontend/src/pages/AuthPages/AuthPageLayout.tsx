@@ -26,7 +26,7 @@ export default function AuthLayout({
                 />
               </Link>
               <p className="text-center text-gray-400 dark:text-white/60">
-                Start automation and let Trobyx work as your smart digital assistant.
+                Start automation and let Autovatus work as your smart digital assistant.
               </p>
             </div>
           </div>

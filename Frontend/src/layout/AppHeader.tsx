@@ -3,16 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
-import NotificationDropdown from "../components/header/NotificationDropdown";
 import UserDropdown from "../components/header/UserDropdown";
-import useAuthStore from "../stores/useAuthStore";
-import { AlertCircle } from "lucide-react";
 
 const AppHeader: React.FC = () => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
-  const { user } = useAuthStore();
 
   const handleToggle = () => {
     if (window.innerWidth >= 1024) {
@@ -171,15 +167,6 @@ const AppHeader: React.FC = () => {
           </div>
           {/* <!-- User Area --> */}
           <div className="flex items-center gap-3">
-            {user && !user.emailVerified && (
-              <Link
-                to="/profile-settings"
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-700 dark:text-amber-400 text-xs font-semibold hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all animate-pulse"
-              >
-                <AlertCircle size={14} className="shrink-0" />
-                <span>Verify Email</span>
-              </Link>
-            )}
             <UserDropdown />
           </div>
         </div>

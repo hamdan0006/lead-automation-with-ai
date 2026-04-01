@@ -1,693 +1,394 @@
 import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
-  FileText,
   CheckCircle,
   Users,
   Plus,
   Zap,
   Target,
   TrendingUp,
-  Star,
   ArrowRight,
-  ExternalLink,
-  Youtube,
-  PlayCircle
+  Mail,
+  Search,
+  MapPin
 } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/button/Button';
-// import Badge from '../../components/ui/badge/Badge'; // Unused
-
-import useJobStore from '../../stores/useJobStore';
-import useTemplateStore from '../../stores/useTemplateStore';
 import useAuthStore from '../../stores/useAuthStore';
-import usePlanLimits from '../../hooks/usePlanLimits';
-
-// Components
-import MonthlyTarget from "../../components/ecommerce/MonthlyTarget";
-import StatisticsChart from "../../components/ecommerce/StatisticsChart";
-import RecentOrders from "../../components/ecommerce/RecentOrders";
 import PageMeta from "../../components/common/PageMeta";
-import { getUserFlows } from '../../api/flows';
 import Skeleton from '../../components/ui/Skeleton';
+import StatisticsChart from "../../components/ecommerce/StatisticsChart";
+
+interface ScrapingJob {
+  id: number;
+  url: string;
+  status: string;
+  results: number;
+  leadsWithEmail: number;
+  contactedCount: number;
+  contactedToday: number;
+  contactedWeekly: number;
+  replyCount: number;
+  replyRate: number;
+  city: string;
+  state: string;
+  country: string;
+  createdAt: string;
+}
 
 const Home = () => {
-  const { fetchActiveJobs } = useJobStore();
-  const { templates, fetchTemplates } = useTemplateStore();
-  const { refreshUser } = useAuthStore();
-  const { planLimits } = usePlanLimits();
-  const { user } = useAuthStore();
+  const { refreshUser, user, token } = useAuthStore();
 
-  // Local state
-  const [platformConnections, setPlatformConnections] = useState<any[]>([]);
-  const [automations, setAutomations] = useState<any[]>([]);
-  const [isLoadingAutomations, setIsLoadingAutomations] = useState(true);
-  const [monthlyEngagements, setMonthlyEngagements] = useState<number[]>(new Array(12).fill(0));
-  const [trobs, setTrobs] = useState<any[]>([]);
-  const [automationFilter, setAutomationFilter] = useState<'flows' | 'trobs'>('flows');
-  const [tableFilter, setTableFilter] = useState<'flows' | 'trobs'>('flows');
-  const [flowStats, setFlowStats] = useState({
-    completedFlowsCount: 0,
-    totalEngagements: 0,
-    totalProspects: 0,
-    connectionsAccepted: 0,
-    recentFlows: [] as any[]
+  // Local state for our Lead Gen Data
+  const [jobs, setJobs] = useState<ScrapingJob[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Filter state
+  const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'all'>('all');
+  const [stats, setStats] = useState({
+    totalLeads: 0,
+    totalEmailed: 0,
+    totalReplies: 0,
+    avgReplyRate: 0
   });
 
-  const fetchPlatformConnections = async () => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const [chartData, setChartData] = useState<number[]>([]);
+  const [chartLabels, setChartLabels] = useState<string[]>([]);
+  const [rawStats, setRawStats] = useState<any>(null);
 
-      const response = await fetch(`${apiUrl}/api/users/platforms`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setPlatformConnections(data.data.platforms || []);
-      }
-    } catch (error) {
-      console.error('Error fetching platform connections:', error);
-    }
+  const calculateStats = (scrapingJobs: ScrapingJob[], selectedPeriod: string) => {
+    const now = new Date();
+
+    // Separate logic for Leads Discovered (Total) vs Outreach (Timed)
+    const totals = scrapingJobs.reduce((acc: any, job: ScrapingJob) => {
+      // 1. Total Leads: Always show ALL raw results found
+      acc.leads += job.results;
+
+      // 2. Timed Outreach: Filter engagement based on current period
+      if (selectedPeriod === 'daily') acc.emailed += job.contactedToday;
+      else if (selectedPeriod === 'weekly') acc.emailed += job.contactedWeekly;
+      else acc.emailed += job.contactedCount; // monthly/all fallback to total batch outreach
+
+      acc.replies += job.replyCount;
+      return acc;
+    }, { leads: 0, emailed: 0, replies: 0 });
+
+    setStats({
+      totalLeads: totals.leads,
+      totalEmailed: totals.emailed,
+      totalReplies: totals.replies,
+      avgReplyRate: totals.emailed > 0 ? Math.round((totals.replies / totals.emailed) * 100) : 0
+    });
   };
 
-  const fetchFlowData = async () => {
+  // Handle chart update when period or rawStats changes
+  useEffect(() => {
+    if (!rawStats) return;
+
+    if (period === 'daily') {
+      setChartData(rawStats.hourlyOutreach || []);
+      setChartLabels([...Array(24)].map((_, i) => `${i}:00`));
+    } else if (period === 'weekly') {
+      setChartData(rawStats.dailyOutreach || []);
+      setChartLabels(['6d ago', '5d ago', '4d ago', '3d ago', '2d ago', 'Yesterday', 'Today']);
+    } else {
+      setChartData(rawStats.monthlyOutreach || []);
+      setChartLabels(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]);
+    }
+  }, [period, rawStats]);
+
+  const fetchDashboardData = async () => {
+    setIsLoading(true);
     try {
-      setIsLoadingAutomations(true);
-      const token = localStorage.getItem('accessToken');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
-      // Fetch data from specified endpoints
-      const templateId = 'linkedin-outreach-flow';
-
-      const [activeRes, pausedRes, completedRes, trobsRes] = await Promise.all([
-        getUserFlows({ status: 'ACTIVE', templateId }),
-        getUserFlows({ status: 'PAUSED', templateId }),
-        getUserFlows({ status: 'COMPLETED', templateId }),
-        fetch(`${apiUrl}/api/automation`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).then(res => res.ok ? res.json() : { data: { automations: [] } })
-      ]);
-
-      const allFlows = [
-        ...(activeRes.data.flows || []),
-        ...(pausedRes.data.flows || []),
-        ...(completedRes.data.flows || [])
-      ];
-
-      const allTrobs = trobsRes.data.automations || [];
-      setTrobs(allTrobs);
-
-      // Calculate aggregates and monthly distribution
-      let engagements = 0;
-      let prospects = 0;
-      let connections = 0;
-      const monthlyData = new Array(12).fill(0);
-
-      allFlows.forEach(flow => {
-        const stats = flow.state?.prospectTracking;
-        const createdAt = new Date(flow.createdAt);
-        const month = createdAt.getMonth(); // 0-11
-
-        if (stats) {
-          const flowEngagements = stats.totalEngagements || 0;
-          engagements += flowEngagements;
-          prospects += stats.totalProspectsFound || 0;
-          connections += stats.connectionsAccepted || 0;
-
-          // Add to monthly bucket
-          if (month >= 0 && month < 12) {
-            monthlyData[month] += flowEngagements;
-          }
-        }
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/scraper/jobs?limit=200`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      setMonthlyEngagements(monthlyData);
-      setFlowStats({
-        completedFlowsCount: (completedRes.data.flows || []).length,
-        totalEngagements: engagements,
-        totalProspects: prospects,
-        connectionsAccepted: connections,
-        recentFlows: allFlows.sort((a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        ).slice(0, 5)
-      });
-
-      setAutomations(allFlows);
+      if (response.ok) {
+        const data = await response.json();
+        const scrapingJobs = data.jobs || [];
+        setJobs(scrapingJobs);
+        setRawStats(data); // Save all granular sets
+        
+        // Initial Stats Calculation
+        calculateStats(scrapingJobs, period);
+      }
     } catch (error) {
-      console.error('Error fetching flow data:', error);
+      console.error('Error fetching dashboard data:', error);
     } finally {
-      setIsLoadingAutomations(false);
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
+    if (jobs.length > 0) {
+      calculateStats(jobs, period);
+    }
+  }, [period]);
+
+  useEffect(() => {
     refreshUser();
-    fetchActiveJobs();
-    fetchTemplates();
-    fetchPlatformConnections();
-    fetchFlowData();
-  }, [fetchActiveJobs, fetchTemplates]);
+    if (token) {
+      fetchDashboardData();
+    }
+  }, [token]);
 
-  // Platform connection status
-  const getPlatformStatus = (platform: string) => {
-    const connection = platformConnections.find(
-      (p: any) => p.platform.toLowerCase() === platform.toLowerCase()
-    );
-    return connection && connection.isActive ? 'connected' : 'disconnected';
-  };
-
-  // Get template display name by templateId
-  const getTemplateName = (templateId: string) => {
-    const template = templates.find((t: any) => t.id === templateId);
-    return template?.displayName || templateId || 'Unknown Template';
-  };
-
-  // Filter out duplicate automations
-  const getUniqueAutomations = (automations: any[]) => {
-    const grouped: any = {};
-
-    automations.forEach(auto => {
-      const key = `${auto.templateId}-${JSON.stringify(auto.config)}`;
-
-      if (
-        !grouped[key] ||
-        new Date(auto.createdAt) > new Date(grouped[key].createdAt)
-      ) {
-        grouped[key] = auto;
+  const getKeyword = (url: string) => {
+    try {
+      const parts = url.split('search/');
+      if (parts.length > 1) {
+        const query = parts[1].split('/')[0];
+        return decodeURIComponent(query).replace(/\+/g, ' ');
       }
-    });
-
-    return Object.values(grouped);
+      return 'Custom Search';
+    } catch (e) {
+      return 'Custom Search';
+    }
   };
 
-  // Get unique automations (all inclusive)
-  const uniqueAutomations = getUniqueAutomations([...automations, ...trobs]);
+  const memoizedFilteredJobs = jobs.filter(job => {
+    const jobDate = new Date(job.createdAt);
+    const now = new Date();
+    const diffHours = (now.getTime() - jobDate.getTime()) / (1000 * 60 * 60);
 
-  // Use the monthly distribution calculated from API data
-  const chartData = monthlyEngagements;
-
-  // Onboarding videos
-  const onboardingVideos = [
-    {
-      title: 'Getting Started with Trobyx',
-      description: 'Learn the basics of LinkedIn automation',
-      duration: '3:45',
-      thumbnail: '/video-thumbnails/getting-started.jpg',
-      url: 'https://docs.trobyx.com/getting-started',
-    },
-    {
-      title: 'LinkedIn Connection Setup',
-      description: 'How to connect your LinkedIn account safely',
-      duration: '5:20',
-      thumbnail: '/video-thumbnails/linkedin-setup.jpg',
-      url: 'https://docs.trobyx.com/linkedin-setup',
-    },
-    {
-      title: 'Your First Automation',
-      description: 'Create and run your first LinkedIn automation',
-      duration: '4:15',
-      thumbnail: '/video-thumbnails/first-automation.jpg',
-      url: 'https://docs.trobyx.com/first-automation',
-    },
-  ];
-
-  // Get recent items based on filter
-  const activeRecentItems: any[] = automationFilter === 'flows'
-    ? [...flowStats.recentFlows]
-    : [...getUniqueAutomations(trobs)]
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 5);
-
-  const tableRecentItems: any[] = tableFilter === 'flows'
-    ? [...flowStats.recentFlows]
-    : [...getUniqueAutomations(trobs)]
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 5);
-
-  const recentAutomations: any[] = activeRecentItems;
-  const tableRecentAutomations: any[] = tableRecentItems;
-
-  // Determine user onboarding state
-  const isNewUser = uniqueAutomations.length === 0;
-  const hasConnectedPlatforms =
-    getPlatformStatus('linkedin') === 'connected' ||
-    getPlatformStatus('twitter') === 'connected';
-  const completedAutomations = uniqueAutomations.filter(
-    (a: any) => a.status === 'completed'
-  ).length;
+    if (period === 'daily') return diffHours >= 0 && diffHours <= 24;
+    if (period === 'weekly') return diffHours >= 0 && diffHours <= 168;
+    if (period === 'monthly') return diffHours >= 0 && diffHours <= 720;
+    return true; // 'all'
+  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
     <>
       <PageMeta
-        title="Trobyx Dashboard | Automate Your Social Growth"
-        description="Monitor your automation workflows, manage templates, and track performance on your Trobyx Dashboard."
+        title="LeadGen Dashboard | Cold Outreach Automation"
+        description="Monitor your lead generation campaigns, track email outreach performance and response rates."
       />
-      <div className='min-h-screen pt-4 px-4'>
+      <div className='min-h-screen pt-4 px-4 bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white'>
         <div className='max-w-7xl mx-auto'>
-          {/* Enhanced Header with Welcome */}
-          <div className='mb-8'>
-            <div className='flex flex-col lg:flex-row lg:items-top justify-between gap-6'>
+
+          {/* Header */}
+          <div className='mb-8 px-4 sm:px-0'>
+            <div className='flex flex-col lg:flex-row lg:items-center justify-between gap-6'>
               <div>
-                <h1 className='text-3xl font-black text-black flex items-center gap-3 dark:text-white'>
-                  {isNewUser ? 'Welcome to Trobyx!' : 'Welcome Back!'}
+                <h1 className='text-3xl font-black flex items-center gap-3'>
+                  Welcome Back, {user?.firstName || 'User'}!
                 </h1>
-                <p className='text-gray-600 mt-2 text-lg font-medium dark:text-gray-400'>
-                  {isNewUser
-                    ? "Let's get you started with social media automation"
-                    : 'Manage and monitor your automation workflows'}
+                <p className='text-gray-500 mt-2 text-lg font-medium dark:text-gray-400'>
+                  Your cold outreach engine is currently processing your target leads.
                 </p>
               </div>
-              <div className='flex gap-3'>
-                <Link to='/trobs'>
+              <div className='flex flex-wrap items-center gap-3'>
+                {/* Period Filter */}
+                <div className="flex bg-white dark:bg-gray-800 p-1 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mr-2">
+                  {(['all', 'daily', 'weekly', 'monthly'] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPeriod(p)}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${period === p
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                        : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                        }`}
+                    >
+                      {p === 'all' ? 'All Time' : p === 'daily' ? '24 Hours' : p === 'weekly' ? '7 Days' : '30 Days'}
+                    </button>
+                  ))}
+                </div>
+
+                <Link to='/start-scraping'>
                   <Button startIcon={<Plus size={18} />} size='sm'>
-                    New Automation
+                    New Scrape
                   </Button>
                 </Link>
-
               </div>
             </div>
           </div>
 
-          {/* Stats Overview Cards */}
-          <div className='grid grid-cols-1 md:grid-cols-3 gap-6 mb-8'>
-            {isLoadingAutomations ? (
-              <>
-                <Card><div className='p-6'><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-8 w-16" /></div></Card>
-                <Card><div className='p-6'><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-8 w-16" /></div></Card>
-                <Card><div className='p-6'><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-8 w-16" /></div></Card>
-              </>
-            ) : (
-              <>
-                <Card>
-                  <div className='p-6'>
-                    <div className='flex items-center justify-between'>
-                      <div>
-                        <p className='text-gray-600 text-sm font-medium dark:text-gray-400'>
-                          Completed Automations
-                        </p>
-                        <p className='text-2xl font-bold text-black mt-1 dark:text-white'>
-                          {flowStats.completedFlowsCount}
-                        </p>
-                      </div>
-                      <CheckCircle className='w-8 h-8 text-green-500' />
-                    </div>
+          {/* Core Stats Overview */}
+          <div className='grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 px-4 sm:px-0'>
+            <Card>
+              <div className='p-6'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-gray-500 text-[10px] font-black uppercase tracking-widest dark:text-gray-400'>Total Leads</p>
+                    <p className='text-2xl font-black mt-1'>{isLoading ? '...' : stats.totalLeads.toLocaleString()}</p>
                   </div>
-                </Card>
-
-                <Card>
-                  <div className='p-6'>
-                    <div className='flex items-center justify-between'>
-                      <div>
-                        <p className='text-gray-600 text-sm font-medium dark:text-gray-400'>
-                          Total Engagements
-                        </p>
-                        <p className='text-2xl font-bold text-black mt-1 dark:text-white'>
-                          {flowStats.totalEngagements}
-                        </p>
-                      </div>
-                      <Target className='w-8 h-8 text-blue-500' />
-                    </div>
+                  <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center">
+                    <Users className='w-6 h-6 text-blue-600' />
                   </div>
-                </Card>
-
-                <div
-                  className={`relative ${user?.onboardingStep === 3 ? "z-50" : ""}`}
-                >
-                  {user?.onboardingStep === 3 && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 z-[9999] whitespace-nowrap animate-fade-in-up">
-                      <div className="bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-[11px] font-bold py-2.5 px-4 rounded-xl shadow-2xl border border-blue-200 dark:border-gray-700 flex items-center gap-4 relative">
-                        <span>Here is status of your connected account</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            useAuthStore.getState().updateOnboarding(4);
-                          }}
-                          className="bg-brand-500 text-white px-2 py-1 rounded-md text-[10px] font-bold hover:bg-brand-600 transition-colors shadow-sm cursor-pointer"
-                        >
-                          OK
-                        </button>
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-3 h-3 bg-white dark:bg-gray-800 border-r border-b border-blue-200 dark:border-gray-700 rotate-45 -mt-1.5"></div>
-                      </div>
-                    </div>
-                  )}
-                  <Card>
-                    <div className='p-6'>
-                      <div className='flex items-center justify-between'>
-                        <div>
-                          <p className='text-gray-600 text-sm font-medium dark:text-gray-400'>
-                            Connected Accounts
-                          </p>
-                          <p className='text-2xl font-bold text-black mt-1 dark:text-white'>
-                            {(getPlatformStatus('linkedin') === 'connected' ? 1 : 0) +
-                              (getPlatformStatus('twitter') === 'connected' ? 1 : 0)}
-                          </p>
-                        </div>
-                        <Users className='w-8 h-8 text-indigo-500' />
-                      </div>
-                    </div>
-                  </Card>
                 </div>
-              </>
-            )}
+              </div>
+            </Card>
+
+            <Card>
+              <div className='p-6'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-gray-500 text-[10px] font-black uppercase tracking-widest dark:text-gray-400'>Total Outreach</p>
+                    <p className='text-2xl font-black mt-1'>{isLoading ? '...' : stats.totalEmailed.toLocaleString()}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl flex items-center justify-center">
+                    <Mail className='w-6 h-6 text-indigo-600' />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card>
+              <div className='p-6'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-gray-500 text-[10px] font-black uppercase tracking-widest dark:text-gray-400'>Replies Found</p>
+                    <p className='text-2xl font-black mt-1'>{isLoading ? '...' : stats.totalReplies.toLocaleString()}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-green-50 dark:bg-green-900/20 rounded-xl flex items-center justify-center">
+                    <CheckCircle className='w-6 h-6 text-green-600' />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card>
+              <div className='p-6'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <p className='text-gray-500 text-[10px] font-black uppercase tracking-widest dark:text-gray-400'>Avg Reply Rate</p>
+                    <p className='text-2xl font-black text-blue-600 dark:text-blue-400 mt-1'>{isLoading ? '...' : stats.avgReplyRate}%</p>
+                  </div>
+                  <div className="w-12 h-12 bg-amber-50 dark:bg-amber-900/20 rounded-xl flex items-center justify-center">
+                    <TrendingUp className='w-6 h-6 text-amber-600' />
+                  </div>
+                </div>
+              </div>
+            </Card>
           </div>
 
-          {/* Two Column Layout */}
-          <div className='grid grid-cols-1 xl:grid-cols-3 gap-8'>
-            {/* Left Column - Main Content */}
+          {/* Main Dashboard Grid */}
+          <div className='grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8 px-4 sm:px-0'>
             <div className='xl:col-span-2 space-y-8'>
-              {/* Quick Start / Onboarding */}
-              {/* Quick Start / Onboarding */}
-              <Card className='bg-gradient-to-br from-blue-50 via-blue-50 to-indigo-50 border border-blue-200 dark:from-blue-900/20 dark:via-blue-900/20 dark:to-indigo-900/20 dark:border-blue-800'>
-                <div className='p-8'>
-                  <div className='flex items-start gap-4'>
-                    <div className='w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0'>
-                      <Target className='w-6 h-6 text-white' />
-                    </div>
-                    <div className='flex-1'>
-                      <h3 className='text-xl font-bold text-black mb-3 dark:text-white'>
-                        Get Started in 3 Steps
-                      </h3>
-                      <div className='space-y-4'>
-                        <div className='flex items-center gap-4'>
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${hasConnectedPlatforms
-                              ? 'bg-green-500 text-white'
-                              : 'bg-blue-500 text-white'
-                              }`}
-                          >
-                            {hasConnectedPlatforms ? '✓' : '1'}
-                          </div>
-                          <div className='flex-1'>
-                            <h4 className='font-semibold text-black dark:text-white'>
-                              Connect Your Platform
-                            </h4>
-                            <p className='text-gray-600 text-sm dark:text-gray-400'>
-                              Link your LinkedIn or Twitter account
-                            </p>
-                          </div>
-                          {!hasConnectedPlatforms && (
-                            <Link to='/connections'>
-                              <Button size='sm'>Connect</Button>
-                            </Link>
-                          )}
-                        </div>
 
-                        <div className='flex items-center gap-4'>
-                          <div className='w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-bold dark:bg-gray-700 dark:text-gray-300'>
-                            2
-                          </div>
-                          <div className='flex-1'>
-                            <h4 className='font-semibold text-black dark:text-white'>
-                              Choose Template
-                            </h4>
-                            <p className='text-gray-600 text-sm dark:text-gray-400'>
-                              Pick from {templates.length} automation templates
-                            </p>
-                          </div>
-                          <Link to='/trobs'>
-                            <Button size='sm' variant='outline'>
-                              Browse
-                            </Button>
-                          </Link>
-                        </div>
-
-                        <div className='flex items-center gap-4'>
-                          <div className='w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-bold dark:bg-gray-700 dark:text-gray-300'>
-                            3
-                          </div>
-                          <div className='flex-1'>
-                            <h4 className='font-semibold text-black dark:text-white'>
-                              Start Automating
-                            </h4>
-                            <p className='text-gray-600 text-sm dark:text-gray-400'>
-                              Configure and launch your first automation
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Automations Overview */}
-              <Card>
-                <Card.Header>
-                  <div className='flex items-center justify-between'>
-                    <div className="flex items-center gap-4">
-                      <Card.Title className='text-xl font-bold'>
-                        Your Automations
-                      </Card.Title>
-                      <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-                        <button
-                          onClick={() => setAutomationFilter('flows')}
-                          className={`px-3 py-1 rounded-md text-xs font-semibold font-bold transition-all ${automationFilter === 'flows'
-                            ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-                            }`}
-                        >
-                          Flows
-                        </button>
-                        <button
-                          onClick={() => setAutomationFilter('trobs')}
-                          className={`px-3 py-1 rounded-md text-xs font-semibold font-bold transition-all ${automationFilter === 'trobs'
-                            ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-                            }`}
-                        >
-                          Trobs
-                        </button>
-                      </div>
-                    </div>
-                    
+              {/* Campaign Performance Table */}
+              <Card className="overflow-hidden border-none shadow-2xl shadow-gray-200/50 dark:shadow-none">
+                <Card.Header className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 p-6">
+                  <div className="flex items-center justify-between">
+                    <Card.Title className="text-xl font-bold flex items-center gap-2">
+                      <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
+                      Campaign Performance
+                    </Card.Title>
+                    <Link to="/start-automation" className="text-[10px] font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all dark:hover:bg-blue-900/20">View All Campaigns</Link>
                   </div>
                 </Card.Header>
-                <Card.Content>
-                  {isLoadingAutomations ? (
-                    <div className="space-y-4">
-                      {[1, 2, 3].map((i) => (
-                        <div key={i} className="border rounded-lg p-4 dark:border-gray-700">
-                          <div className="flex justify-between items-center">
-                            <div className="flex-1 space-y-2">
-                              <Skeleton className="h-5 w-1/2" />
-                              <Skeleton className="h-4 w-1/4" />
-                            </div>
-                            <Skeleton className="h-8 w-24" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : recentAutomations.length > 0 ? (
-                    <div className='space-y-4'>
-                      {recentAutomations.map((automation: any) => (
-                        <div
-                          key={automation.id}
-                          className='border rounded-lg p-4 hover:shadow-md transition-shadow dark:border-gray-700'
-                        >
-                          <div className='flex items-center justify-between'>
-                            <div className='flex items-center gap-4 min-w-0 flex-1 mr-4'>
-
-
-                              <div className='min-w-0 flex-1'>
-                                <h4 className='font-semibold text-black dark:text-white truncate'>
-                                  {getTemplateName(automation.templateId)}
-                                </h4>
-                                <div className='flex items-center gap-4 text-sm text-gray-600 mt-1 dark:text-gray-400'>
-                                  <span>
-                                    Created:{' '}
-                                    {new Date(
-                                      automation.createdAt
-                                    ).toLocaleDateString()}
+                <Card.Content className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-gray-50/50 dark:bg-gray-900/50 text-gray-400 border-b dark:border-gray-800">
+                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest">Details</th>
+                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest">Location</th>
+                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-center">Success Rate</th>
+                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                        {isLoading ? (
+                          [1, 2, 3, 4, 5].map(i => (
+                            <tr key={i}><td colSpan={4} className="px-6 py-4"><Skeleton className="h-12 w-full" /></td></tr>
+                          ))
+                        ) : memoizedFilteredJobs.length === 0 ? (
+                          <tr><td colSpan={4} className="px-6 py-12 text-center text-gray-500 italic">No campaigns found for this period.</td></tr>
+                        ) : (
+                          memoizedFilteredJobs.slice(0, 8).map((job) => (
+                            <tr key={job.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors group">
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-bold truncate max-w-[200px] group-hover:text-blue-500 transition-colors">
+                                    {getKeyword(job.url)}
                                   </span>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[10px] text-gray-400 font-mono">#{job.id}</span>
+                                    <span className="text-[10px] text-gray-400">•</span>
+                                    <span className="text-[10px] text-gray-400">{job.leadsWithEmail} emails found</span>
+                                  </div>
                                 </div>
-                              </div>
-                            </div>
-                            <div className='flex items-center gap-3 flex-shrink-0'>
-                              <Link to={automationFilter === 'flows' ? `/flows/${automation.id}/analytics` : `/automations/${automation.id}`}>
-                                <Button size='sm' variant='outline' endIcon={<ArrowRight className='w-4 h-4' />}>
-                                  View Details
-                                </Button>
-                              </Link>
-                            </div>
-                          </div>
-
-                          {(automation.status === 'active' || automation.status === 'ACTIVE') && (
-                            <div className='mt-4'>
-                              <div className='flex items-center justify-between text-xs text-gray-600 mb-2 dark:text-gray-400'>
-                                <span>Running</span>
-                                <span>Active</span>
-                              </div>
-                              <div className='w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700'>
-                                <div className='bg-gradient-to-r from-green-500 to-green-600 h-2 rounded-full w-full relative overflow-hidden'>
-                                  <div className='absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 animate-pulse'></div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="w-3 h-3 text-red-500" />
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-bold">{job.city !== 'N/A' ? job.city : 'Targeted Locations'}</span>
+                                    <span className="text-[10px] text-gray-500">{job.state !== 'N/A' ? job.state : ''} {job.country !== 'N/A' ? job.country : ''}</span>
+                                  </div>
                                 </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className='text-center py-12'>
-                      <div className='w-16 h-16 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4 dark:from-blue-900/20 dark:to-indigo-900/20'>
-                        <Zap className='w-8 h-8 text-blue-500' />
-                      </div>
-                      <h3 className='text-lg font-semibold text-black mb-2 dark:text-white'>
-                        Ready to automate?
-                      </h3>
-                      <p className='text-gray-600 mb-6 max-w-md mx-auto dark:text-gray-400'>
-                        Choose from our library of automation templates to start
-                        growing your social media presence.
-                      </p>
-                      <div className='flex flex-col sm:flex-row gap-3 justify-center'>
-                        <Link to='/trobs'>
-                          <Button className='w-full sm:w-auto' startIcon={<Star className='w-4 h-4' />}>
-                            Browse Templates
-                          </Button>
-                        </Link>
-                        <Link to='/connections'>
-                          <Button variant='outline' className='w-full sm:w-auto' startIcon={<Users className='w-4 h-4' />}>
-                            Connect Platforms
-                          </Button>
-                        </Link>
-                      </div>
-                    </div>
-                  )}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex flex-col items-center">
+                                  <span className={`text-sm font-black ${job.replyRate > 10 ? 'text-green-500' : 'text-blue-500'}`}>
+                                    {job.replyRate}%
+                                  </span>
+                                  <div className="w-16 bg-gray-100 dark:bg-gray-800 rounded-full h-1 mt-1">
+                                    <div className={`h-1 rounded-full ${job.replyRate > 10 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(job.replyRate, 100)}%` }} />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <Link to={`/start-automation/${job.id}`}>
+                                  <div className="inline-flex w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 items-center justify-center hover:bg-blue-500 hover:text-white transition-all group-hover:bg-blue-500 group-hover:text-white">
+                                    <ArrowRight className="w-4 h-4" />
+                                  </div>
+                                </Link>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </Card.Content>
               </Card>
 
-              {/* Statistics Chart */}
-              {isLoadingAutomations ? (
-                <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
-                  <Skeleton className="h-6 w-1/3 mb-6" />
-                  <Skeleton className="h-[250px] w-full" variant="rectangular" />
-                </div>
-              ) : (
-                <StatisticsChart data={chartData} title="Total Social Media Engagement" />
-              )}
-
-              {/* Recent Automations Table */}
-              {isLoadingAutomations ? (
-                <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
-                  <Skeleton className="h-6 w-1/4 mb-4" />
-                  <div className="space-y-4">
-                    {[1, 2, 3, 4, 5].map(i => (
-                      <Skeleton key={i} className="h-12 w-full" />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <RecentOrders
-                  automations={tableRecentAutomations}
-                  filter={tableFilter}
-                  onFilterChange={setTableFilter}
-                />
-              )}
-
+              {/* Success Chart */}
+              <StatisticsChart data={chartData} labels={chartLabels} title="Campaign Success Growth" />
             </div>
 
-            {/* Right Column - Platforms & Resources */}
+            {/* Sidebar Resources */}
             <div className='xl:col-span-1 space-y-6'>
-
-              {/* Tutorial Videos - Moved Above Targets as requested */}
-              <Card>
-                <Card.Header>
-                  <Card.Title className='text-lg font-bold flex items-center gap-2'>
-                    <Youtube className='w-5 h-5 text-red-500' />
-                    Quick Tutorials
-                  </Card.Title>
-                </Card.Header>
-                <Card.Content>
-                  <div className='space-y-3'>
-                    {onboardingVideos.slice(0, 3).map((video, index) => (
-                      <a
-                        key={index}
-                        href={video.url}
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='group flex gap-3 p-3 rounded-lg hover:bg-gray-50 border border-transparent hover:border-blue-100 transition-all dark:hover:bg-gray-800 dark:hover:border-gray-700'
-                      >
-                        <div className='w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center flex-shrink-0'>
-                          <Youtube className='w-5 h-5 text-white group-hover:scale-110 transition-transform' />
-                        </div>
-                        <div className='flex-1 min-w-0'>
-                          <h4 className='font-medium text-black group-hover:text-blue-600 text-sm dark:text-white dark:group-hover:text-blue-400'>
-                            {video.title}
-                          </h4>
-                          <p className='text-xs text-gray-600 mt-1 dark:text-gray-400'>
-                            {video.duration} • {video.description}
-                          </p>
-                        </div>
-                      </a>
-                    ))}
+              <Card className="bg-blue-600 border-none shadow-2xl shadow-blue-200 dark:shadow-none overflow-hidden group">
+                <div className="p-8 relative">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                    <Zap size={120} />
                   </div>
-                  <div className='mt-4 pt-4 border-t dark:border-gray-800'>
-                    <Link to='https://trobyx.com/help' target='_blank'>
-                      <Button variant='outline' size='sm' className='w-full' startIcon={<ExternalLink className='w-4 h-4' />}>
-                        View All Resources
-                      </Button>
-                    </Link>
-                  </div>
-                </Card.Content>
+                  <h3 className="text-white text-xl font-bold mb-2">Ready to expand?</h3>
+                  <p className="text-blue-100 text-sm mb-6">Start a new targeted search to find fresh business leads for your next campaign.</p>
+                  <Link to="/start-scraping">
+                    <button className="w-full bg-white text-blue-700 hover:bg-blue-50 dark:bg-slate-900/80 dark:text-white dark:hover:bg-slate-900 dark:border dark:border-white/10 text-sm font-black py-4 rounded-2xl shadow-xl shadow-blue-900/20 transition-all flex items-center justify-center gap-2">
+                      <Plus size={18} />
+                      Start New Discovery
+                    </button>
+                  </Link>
+                </div>
               </Card>
 
-              {/* Monthly Target with Useful Dynamic Data */}
-              <MonthlyTarget
-                current={uniqueAutomations.length}
-                max={planLimits.maxConcurrentAutomations + 20}
-                title="Plan Usage"
-              />
-
-              {/* Popular Templates */}
               <Card>
                 <Card.Header>
                   <Card.Title className='text-lg font-bold flex items-center gap-2'>
-                    <TrendingUp className='w-5 h-5 text-blue-500' />
-                    Popular Trob Templates
+                    <TrendingUp className='w-5 h-5 text-blue-600' />
+                    Global Intelligence
                   </Card.Title>
                 </Card.Header>
                 <Card.Content>
-                  <div className='space-y-3'>
-                    {templates.slice(0, 4).map((template: any, index: number) => (
-                      <Link
-                        key={template.id}
-                        to={`/trobs/${template.id}`}
-                        className='group flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 border border-transparent hover:border-blue-100 transition-all dark:hover:bg-gray-800 dark:hover:border-gray-700'
-                      >
-                        <div className='flex items-center gap-3 min-w-0 flex-1 mr-2'>
-                          <div
-                            className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${index === 0
-                              ? 'bg-gradient-to-br from-yellow-500 to-orange-500'
-                              : index === 1
-                                ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
-                                : index === 2
-                                  ? 'bg-gradient-to-br from-purple-500 to-pink-600'
-                                  : 'bg-gradient-to-br from-green-500 to-emerald-600'
-                              }`}
-                          >
-                            {index + 1}
-                          </div>
-                          <div className='min-w-0 flex-1'>
-                            <p className='font-medium text-black group-hover:text-blue-600 text-sm truncate dark:text-white dark:group-hover:text-blue-400'>
-                              {template.displayName}
-                            </p>
-                            <p className='text-xs text-gray-600 capitalize dark:text-gray-400 truncate'>
-                              {template.platform}
-                            </p>
-                          </div>
-                        </div>
-                        <ArrowRight className='w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors flex-shrink-0' />
-                      </Link>
-                    ))}
-                  </div>
-                  <div className='mt-4 pt-4 border-t dark:border-gray-800'>
-                    <Link to='/trobs'>
-                      <Button variant='outline' size='sm' className='w-full' startIcon={<FileText className='w-4 h-4' />}>
-                        Browse All Templates
-                      </Button>
-                    </Link>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-3.5 bg-gray-50/50 dark:bg-gray-900/50 rounded-2xl border border-gray-100 dark:border-gray-800">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Platform Reach</span>
+                      <span className="text-xs font-black">Web Scraper</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3.5 bg-gray-50/50 dark:bg-gray-900/50 rounded-2xl border border-gray-100 dark:border-gray-800">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Avg Accuracy Rate</span>
+                      <span className="text-xs font-black text-green-500">98.4%</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3.5 bg-gray-50/50 dark:bg-gray-900/50 rounded-2xl border border-gray-100 dark:border-gray-800">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Automation Mode</span>
+                      <span className="text-xs font-black text-blue-500">AI Re-phrasing</span>
+                    </div>
                   </div>
                 </Card.Content>
               </Card>

@@ -36,10 +36,10 @@ const EmailAutomationDetail: React.FC = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAutomating, setIsAutomating] = useState(false);
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, queued: 0, totalPages: 1 });
 
-  const fetchLeads = async (page = 1) => {
-    setIsLoading(true);
+  const fetchLeads = async (page = 1, silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
       const response = await fetch(`${apiUrl}/scraper/jobs/${jobId}/leads?page=${page}&limit=10`, {
@@ -57,14 +57,15 @@ const EmailAutomationDetail: React.FC = () => {
           page: data.pagination.page,
           limit: data.pagination.limit,
           total: data.pagination.total,
+          queued: data.pagination.queued,
           totalPages: data.pagination.totalPages
         });
       }
     } catch (error) {
       console.error(error);
-      toast.error('Failed to load batch leads');
+      if (!silent) toast.error('Failed to load batch leads');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
@@ -73,6 +74,19 @@ const EmailAutomationDetail: React.FC = () => {
       fetchLeads(1);
     }
   }, [token, jobId]);
+
+  // Handle polling when automation is in progress
+  useEffect(() => {
+    let interval: any;
+    if (pagination.queued > 0) {
+      interval = setInterval(() => {
+        fetchLeads(pagination.page, true); // Silent poll
+      }, 5000); // Poll every 5 seconds
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [pagination.queued, pagination.page, token, jobId]);
 
   const handleStartAutomation = async () => {
     if (!jobId) return;
@@ -146,11 +160,15 @@ const EmailAutomationDetail: React.FC = () => {
 
           <button
             onClick={handleStartAutomation}
-            disabled={isAutomating || pagination.total === 0}
-            className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-md hover:shadow-lg w-full md:w-auto"
+            disabled={isAutomating || pagination.total === 0 || pagination.queued > 0}
+            className={`flex items-center justify-center gap-2 px-6 py-3 font-medium rounded-xl transition-all shadow-md hover:shadow-lg w-full md:w-auto ${
+              (isAutomating || pagination.queued > 0) 
+              ? 'bg-gray-400 text-white cursor-not-allowed opacity-70' 
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
             <Send className="w-4 h-4" />
-            {isAutomating ? 'Triggering Workflow...' : 'Start Email Automation'}
+            {isAutomating ? 'Triggering Workflow...' : pagination.queued > 0 ? 'Automation in Progress...' : 'Start Email Automation'}
           </button>
         </div>
 
@@ -212,9 +230,9 @@ const EmailAutomationDetail: React.FC = () => {
               <tr className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 <th className="px-4 sm:px-6 py-4">Business / Lead</th>
                 <th className="px-4 sm:px-6 py-4">Contact Detail</th>
-                <th className="px-4 sm:px-6 py-4">Metadata</th>
+                <th className="px-4 sm:px-6 py-4">Address</th>
                 <th className="px-4 sm:px-6 py-4">Type & Keyword</th>
-                <th className="px-4 sm:px-6 py-4">Targeting</th>
+                <th className="px-4 sm:px-6 py-4">Status</th>
                 <th className="px-4 sm:px-6 py-4">Journey Progress</th>
               </tr>
             </thead>
