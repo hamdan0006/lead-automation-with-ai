@@ -294,21 +294,37 @@ const Leads: React.FC = () => {
                                             <div className="text-xs text-gray-500">Extracted leads</div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                                                job.status === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                                                job.status === 'PROCESSING' || job.status === 'PENDING' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                                                'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                            }`}>
-                                                {job.status === 'PROCESSING' || job.status === 'PENDING' ? (
-                                                     <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                                                ) : null}
-                                                {job.status}
-                                            </span>
+                                            <div className="flex flex-col gap-2">
+                                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium w-fit ${
+                                                    job.status === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                    job.status === 'PROCESSING' || job.status === 'PENDING' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                }`}>
+                                                    {job.status === 'PROCESSING' || job.status === 'PENDING' ? (
+                                                         <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                                                    ) : null}
+                                                    {job.status}
+                                                </span>
+                                                {(job.status === 'PROCESSING' || job.status === 'PENDING') && job.results > 0 && (
+                                                    <div className="w-full">
+                                                        <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+                                                            <span className="font-medium">Scraping Progress</span>
+                                                            <span className="font-bold">Running...</span>
+                                                        </div>
+                                                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                                                            <div 
+                                                                className="bg-amber-500 h-1.5 rounded-full transition-all duration-300 animate-pulse"
+                                                                style={{ width: '100%' }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <button 
                                                 onClick={() => navigate(`/start-scraping/${job.id}`)}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 rounded-lg transition-colors"
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 rounded-lg transition-colors whitespace-nowrap"
                                             >
                                                 <Eye className="w-4 h-4" /> View List
                                             </button>

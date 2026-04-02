@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle, Search, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle, Search, RefreshCw, BarChart3, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import useAuthStore from '../../stores/useAuthStore';
 
@@ -28,6 +28,12 @@ interface Lead {
   createdAt: string;
 }
 
+interface JobStats {
+  totalLeads: number;
+  scrapedLeads: number;
+  emailsFound: number;
+}
+
 const LeadDetail: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
@@ -37,6 +43,7 @@ const LeadDetail: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [filterLeadType, setFilterLeadType] = useState('');
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1 });
+  const [jobStats, setJobStats] = useState<JobStats>({ totalLeads: 0, scrapedLeads: 0, emailsFound: 0 });
 
   const fetchLeads = async (page = 1, leadType = filterLeadType) => {
     setIsLoading(true);
@@ -65,6 +72,14 @@ const LeadDetail: React.FC = () => {
           total: data.pagination.total,
           totalPages: data.pagination.totalPages
         });
+        // Update job stats if provided by API
+        if (data.stats) {
+          setJobStats({
+            totalLeads: data.stats.totalLeads || data.pagination.total,
+            scrapedLeads: data.stats.scrapedLeads || 0,
+            emailsFound: data.stats.emailsFound || 0
+          });
+        }
       }
     } catch (error) {
       console.error(error);
@@ -90,6 +105,26 @@ const LeadDetail: React.FC = () => {
       fetchLeads(1);
     }
   }, [token, jobId]);
+
+  // Compute stats based on the current visible leads
+  const stats = useMemo(() => {
+    const total = leads.length;
+    if (total === 0) return { emailsFound: 0, mapsScraped: 0, progress: 0, overallProgress: 0 };
+    const emailsFound = leads.filter(l => l.email || l.emailExtracted).length;
+    const mapsScraped = leads.filter(l => l.mapsScraped).length;
+    
+    // Calculate overall progress from job stats
+    const overallProgress = jobStats.totalLeads > 0 
+      ? Math.round((jobStats.scrapedLeads / jobStats.totalLeads) * 100)
+      : Math.round((mapsScraped / total) * 100);
+    
+    return {
+      emailsFound,
+      mapsScraped,
+      progress: Math.round((mapsScraped / total) * 100),
+      overallProgress
+    };
+  }, [leads, jobStats]);
 
   return (
     <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
@@ -132,6 +167,45 @@ const LeadDetail: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Analytics & Progress Cards */}
+        {!isLoading && leads.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center gap-2 mb-4">
+                <Search className="w-5 h-5 text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Search Keyword</h3>
+              </div>
+              <div>
+                <span className="text-2xl font-bold text-gray-900 dark:text-white italic">"{leads[0]?.keyword || 'N/A'}"</span>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center gap-2 mb-4">
+                <MapPin className="w-5 h-5 text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Target Location</h3>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">{leads[0]?.city || 'Various'}</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{[leads[0]?.state, leads[0]?.country].filter(Boolean).join(', ') || 'N/A'}</span>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-5 h-5 text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Scraping Progress</h3>
+              </div>
+              <div className="flex flex-col gap-2">
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">Running</span>
+                <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+                  <div className="bg-brand-600 h-2.5 rounded-full transition-all duration-500 animate-pulse" style={{ width: '100%' }}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden animate-in fade-in duration-500">

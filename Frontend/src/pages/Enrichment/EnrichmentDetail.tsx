@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle, Zap } from 'lucide-react';
+import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle, Zap, BarChart3, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import useAuthStore from '../../stores/useAuthStore';
 
@@ -38,8 +38,8 @@ const EnrichmentDetail: React.FC = () => {
   const [isEnriching, setIsEnriching] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1 });
 
-  const fetchLeads = async (page = 1) => {
-    setIsLoading(true);
+  const fetchLeads = async (page = 1, silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
       const response = await fetch(`${apiUrl}/scraper/jobs/${jobId}/leads?page=${page}&limit=50`, {
@@ -62,9 +62,9 @@ const EnrichmentDetail: React.FC = () => {
       }
     } catch (error) {
       console.error(error);
-      toast.error('Failed to load batch leads');
+      if (!silent) toast.error('Failed to load batch leads');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
@@ -73,6 +73,37 @@ const EnrichmentDetail: React.FC = () => {
       fetchLeads(1);
     }
   }, [token, jobId]);
+
+  // Polling effect - refresh data every 5 seconds if enrichment is in progress
+  useEffect(() => {
+    let interval: any;
+    const total = leads.length;
+    const emailsFound = leads.filter(l => l.email || l.emailExtracted).length;
+    
+    // Poll if there are leads and not all are enriched yet
+    if (total > 0 && emailsFound < total) {
+      interval = setInterval(() => {
+        fetchLeads(pagination.page, true); // Silent poll
+      }, 5000); // Poll every 5 seconds
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [leads, pagination.page, token, jobId]);
+
+  // Compute stats based on the current visible leads
+  const stats = useMemo(() => {
+    const total = leads.length;
+    if (total === 0) return { emailsFound: 0, mapsScraped: 0, progress: 0 };
+    const emailsFound = leads.filter(l => l.email || l.emailExtracted).length;
+    const mapsScraped = leads.filter(l => l.mapsScraped).length;
+    return {
+      emailsFound,
+      mapsScraped,
+      progress: Math.round((emailsFound / total) * 100)
+    };
+  }, [leads]);
 
   const handleStartEnriching = async () => {
     if (!jobId) return;
@@ -136,6 +167,56 @@ const EnrichmentDetail: React.FC = () => {
             {isEnriching ? 'Triggering...' : 'Start Enriching'}
           </button>
         </div>
+
+        {/* Analytics & Progress Cards */}
+        {!isLoading && leads.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-5 h-5 text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Enrichment Progress</h3>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between items-end">
+                  <span className="text-3xl font-bold text-gray-900 dark:text-white">{stats.progress}%</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{stats.emailsFound} / {leads.length} Enriched</span>
+                </div>
+                <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+                  <div className="bg-amber-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${stats.progress}%` }}></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center gap-2 mb-4">
+                <Mail className="w-5 h-5 text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Emails Extracted</h3>
+              </div>
+              <div>
+                <span className="text-3xl font-bold text-gray-900 dark:text-white">{stats.emailsFound}</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">on current page</span>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+              <div className="flex items-center gap-2 mb-4">
+                <AlertCircle className="w-5 h-5 text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Status Overview</h3>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex flex-col">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{leads.length - stats.emailsFound}</span>
+                  <span className="text-xs text-gray-500">Pending</span>
+                </div>
+                <div className="w-px bg-gray-200 dark:bg-gray-700"></div>
+                <div className="flex flex-col">
+                  <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.emailsFound}</span>
+                  <span className="text-xs text-gray-500">Enriched</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden animate-in fade-in duration-500">

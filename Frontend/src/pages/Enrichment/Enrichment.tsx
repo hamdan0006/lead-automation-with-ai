@@ -14,6 +14,8 @@ interface ScrapingJob {
   state: string;
   country: string;
   createdAt: string;
+  enrichmentStatus?: string;
+  emailsExtracted?: number;
 }
 
 const Enrichment: React.FC = () => {
@@ -137,7 +139,7 @@ const Enrichment: React.FC = () => {
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Target Region</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Keyword</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Leads</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Scrape Status</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Enrichment Status</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
                             </tr>
                         </thead>
@@ -202,13 +204,31 @@ const Enrichment: React.FC = () => {
                                             <div className="text-xs text-gray-500">Scraped leads</div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold border ${
-                                                job.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
-                                                job.status === 'PROCESSING' || job.status === 'PENDING' || job.status === 'MAPS_SCRAPING' ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800' :
-                                                'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'
-                                            }`}>
-                                                {job.status === 'MAPS_SCRAPING' ? 'Scraping Maps' : job.status}
-                                            </span>
+                                            <div className="flex flex-col gap-2">
+                                                <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold border w-fit ${
+                                                    job.enrichmentStatus === 'COMPLETED' || (job.emailsExtracted && job.emailsExtracted > 0) ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
+                                                    job.enrichmentStatus === 'PROCESSING' || job.enrichmentStatus === 'PENDING' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' :
+                                                    'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400 dark:border-gray-700'
+                                                }`}>
+                                                    {job.enrichmentStatus === 'PROCESSING' ? 'Enriching' : 
+                                                     job.enrichmentStatus === 'PENDING' ? 'Pending' :
+                                                     job.enrichmentStatus === 'COMPLETED' ? 'Completed' : 'Not Started'}
+                                                </span>
+                                                {(job.enrichmentStatus === 'PROCESSING' || job.enrichmentStatus === 'PENDING') && (
+                                                    <div className="w-full">
+                                                        <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+                                                            <span className="font-medium">Extracting Emails</span>
+                                                            <span className="font-bold">Running...</span>
+                                                        </div>
+                                                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
+                                                            <div 
+                                                                className="bg-amber-500 h-1.5 rounded-full transition-all duration-300 animate-pulse"
+                                                                style={{ width: '100%' }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <button 
@@ -216,7 +236,7 @@ const Enrichment: React.FC = () => {
                                                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 rounded-xl border border-amber-200 dark:border-amber-800 shadow-sm transition-all whitespace-nowrap"
                                             >
                                                 <Zap className="w-4 h-4" /> 
-                                                {job.status === 'COMPLETED' ? 'View Results' : 'Start Enriching'}
+                                                {job.enrichmentStatus === 'COMPLETED' ? 'View Results' : 'Start Enriching'}
                                             </button>
                                         </td>
                                     </tr>
