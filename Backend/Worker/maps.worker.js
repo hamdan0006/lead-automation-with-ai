@@ -28,12 +28,24 @@ const startMapsWorker = () => {
 
       logger.info(`🗺️ Maps Worker processing Job ID ${jobId} for query: "${query}"`);
 
-      // Update status to PROCESSING only when the worker actually starts
+      // Verify job exists before processing
       if (jobId) {
+        const jobExists = await prisma.scrapingJob.findUnique({
+          where: { id: jobId }
+        });
+
+        if (!jobExists) {
+          logger.error(`❌ Job ID ${jobId} not found in database. Skipping...`);
+          return; // Exit gracefully without throwing error
+        }
+
+        // Update status to PROCESSING only when the worker actually starts
         await prisma.scrapingJob.update({
           where: { id: jobId },
           data: { status: 'PROCESSING' }
-        }).catch(() => {});
+        }).catch((err) => {
+          logger.error(`DB Error updating job status: ${err.message}`);
+        });
       }
 
       try {

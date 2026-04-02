@@ -121,31 +121,39 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
             } else {
                // 🟢 NEW LEAD
                const { area, city, state, country } = parseAddress(leadData.address);
-               await prisma.lead.create({
-                 data: {
-                   name: leadData.name,
-                   address: leadData.address,
-                   website: leadData.website,
-                   hasWebsite: !!leadData.website,
-                   phone: leadData.phone,
-                   keyword: query, 
-                   leadType: leadType || null,
-                   source: 'google_maps',
-                   mapsScraped: true,
-                   uniqueKey: uniqueKey,
-                   scrapingJobId: scrapingJobId ? parseInt(scrapingJobId) : null,
-                   area, city, state, country
-                 }
-               });
+               try {
+                 await prisma.lead.create({
+                   data: {
+                     name: leadData.name,
+                     address: leadData.address,
+                     website: leadData.website,
+                     hasWebsite: !!leadData.website,
+                     phone: leadData.phone,
+                     keyword: query, 
+                     leadType: leadType || null,
+                     source: 'google_maps',
+                     mapsScraped: true,
+                     uniqueKey: uniqueKey,
+                     scrapingJobId: scrapingJobId ? parseInt(scrapingJobId) : null,
+                     area, city, state, country
+                   }
+                 });
 
-               newLeadsFound++;
-               if (scrapingJobId) {
-                  await prisma.scrapingJob.update({
-                    where: { id: parseInt(scrapingJobId) },
-                    data: { results: { increment: 1 } }
-                  }).catch(() => {});
+                 newLeadsFound++;
+                 if (scrapingJobId) {
+                    await prisma.scrapingJob.update({
+                      where: { id: parseInt(scrapingJobId) },
+                      data: { results: { increment: 1 } }
+                    }).catch(() => {});
+                 }
+                 logger.info(`✨ NEW Lead Found (${newLeadsFound}/${targetNewLeads}): ${leadData.name}`);
+               } catch (dbError) {
+                 if (dbError.message.includes('Foreign key constraint')) {
+                   logger.error(`❌ Job ID ${scrapingJobId} no longer exists. Stopping scraper...`);
+                   throw new Error('Job deleted during scraping');
+                 }
+                 throw dbError;
                }
-               logger.info(`✨ NEW Lead Found (${newLeadsFound}/${targetNewLeads}): ${leadData.name}`);
             }
           }
         } catch (err) {
