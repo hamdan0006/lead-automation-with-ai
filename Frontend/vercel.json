@@ -11,6 +11,10 @@
     {
       "source": "/health/:path*",
       "destination": "http://51.21.219.214:3000/api/health/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
