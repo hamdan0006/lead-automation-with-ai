@@ -213,7 +213,7 @@ const startMailWorker = () => {
     {
       connection: redis,
       concurrency: 1, // One by one to avoid getting flagged as spam
-      lockDuration: 1800000, // 👈 30 minutes (Safely covers 12min gaps + 20min coffee breaks)
+      lockDuration: 1800000, // 30 minutes (Safely covers 12min gaps + 20min coffee breaks)
       stalledInterval: 60000 
     }
   );

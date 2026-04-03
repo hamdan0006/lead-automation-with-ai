@@ -1,9 +1,9 @@
 const { Queue } = require('bullmq');
 const redis = require('../config/redis');
 const logger = require('../utils/logger');
-const transporter = require('../config/mail');
 const { prisma } = require('../config/db');
-const path = require('path');
+const transporter = require('../config/mail');
+const { generateOutreachBody, generateFollowUpBody } = require('./aiEmail.service');
 
 /**
  * BullMQ Email Sending Queue
@@ -11,6 +11,8 @@ const path = require('path');
 const mailQueue = new Queue('send-email', {
   connection: redis,
 });
+
+
 
 /**
  * Add job to send email to a lead
@@ -46,17 +48,16 @@ const addSendEmailJob = async (leadId, email, leadName, isFollowUp = false, dela
 /**
  * Handle individual mailing logic
  * @param {string} to 
- * @param {object} leadData - full lead object
+ * @param {object} leadData - full lead object (or null for warmup)
  * @param {string} aiContent - AI generated body content 
  * @param {boolean} isFollowUp - Is this a follow up email?
  * @param {string} subjectOverride - Optional dynamic subject line
+ * @param {boolean} isWarmup - Is this a warmup email?
  */
 const sendEmail = async (to, leadData, aiContent, isFollowUp = false, subjectOverride = null) => {
   try {
-    
-    let subject, body;
-
     const bizName = leadData.name || 'Your business';
+    let subject, body;
 
     if (subjectOverride) {
         subject = subjectOverride;
@@ -68,7 +69,7 @@ const sendEmail = async (to, leadData, aiContent, isFollowUp = false, subjectOve
     body = aiContent || "Hello, I wanted to reach out but an error arose generating the message. Please excuse me.";
     
     const info = await transporter.sendMail({
-      from: `"BizBuilder" <${process.env.SMTP_EMAIL}>`,
+      from: `"Hamdan Ahmad" <${process.env.SMTP_EMAIL}>`,
       to: to,
       subject: subject,
       text: body
@@ -127,16 +128,13 @@ const enqueueLeadsForOutreach = async (jobId) => {
 
 /**
  * Send an administrative notification email (e.g., job completion)
+ * Bypasses daily limit - always sends regardless of quota
  * @param {string} subject 
  * @param {string} text 
  */
 const sendNotificationEmail = async (subject, text) => {
   try {
-    const to = process.env.NOTIFICATION_EMAIL;
-    if (!to) {
-      logger.warn('⚠️ NOTIFICATION_EMAIL not found in .env, skipping notification.');
-      return false;
-    }
+    const to = 'hamdanahmad0006@gmail.com';
 
     const info = await transporter.sendMail({
       from: `"Lead Gen System" <${process.env.SMTP_EMAIL}>`,

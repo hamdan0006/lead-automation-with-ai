@@ -44,34 +44,29 @@ const callAICompletion = async (prompt, model = 'meta-llama/llama-3.3-70b-instru
 
 const parseAIResponse = (text) => {
     try {
-        const match = text.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error('No JSON object found in AI response');
-        return JSON.parse(match[0]);
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start === -1 || end === -1) throw new Error('No JSON found');
+        return JSON.parse(text.slice(start, end + 1));
     } catch (error) {
         logger.error(`❌ AI JSON Parse Error: ${error.message}. Content: ${text.substring(0, 100)}...`);
         throw new Error('Could not parse AI response as JSON');
     }
 };
 
-// Helper to clean business names (strips city/state suffixes often found in scraper data)
 const cleanName = (name) => {
     if (!name) return '';
     return name
         .replace(/[\r\n]+/g, ' ')
-        // Strips " - Miami", " | New York FL.", etc. from the end of the name
         .replace(/\s*[-–|@]\s*(miami|new york|chicago|houston|los angeles|dallas|phoenix|philadelphia|san antonio|san diego|[a-z\s]{3,20}),?\s*(fl|tx|ca|ny|az|il|pa|nj)?\.?$/i, '')
         .replace(/\s+/g, ' ')
         .trim();
 };
 
-/**
- * Strips any sign-off variation and appends guaranteed correct format
- */
 const polishBody = (body) => {
     if (!body) return body;
     body = body.trim().replace(/^"+|"+$/g, '').trim();
     
-    // 1. Force Greeting Line Break
     if (body.toLowerCase().startsWith('hi,')) {
         const firstLineMatch = body.match(/^hi,([^\n]*)\n?/i);
         if (firstLineMatch) {
@@ -81,169 +76,147 @@ const polishBody = (body) => {
         }
     }
 
-    // 2. Clear out any existing "Regards" blocks to rewrite them
     body = body.replace(/[\n\r\s]*regards,?[\n\r\s]*hamdan ahmad[\n\r\s]*/gi, '').trim();
     
-    // 3. Ensure double line breaks between paragraphs
-    // If AI sent single line breaks, convert them to doubles
     if (!body.includes('\n\n')) {
         body = body.replace(/\n/g, '\n\n');
     }
 
-    // 4. Append forced sign-off structure
     body = body + '\n\nRegards,\nHamdan Ahmad';
     
     return body.trim();
 };
 
-// ─── MASTER TEMPLATES (user's exact words — AI only rephrases these) ──────────
 const getTemplate = (scenario, businessName, city, loadTime) => {
     const load = loadTime ? `${loadTime}s` : 'several seconds';
     const loc = city || 'your area';
 
-    // Roles for context-aware professional lines
-    const roles = {
-        BAD_SEO: 'web developer and SEO specialist',
-        SEO_AND_SPEED: 'web developer',
-        SLOW_LOAD: 'web developer',
-        INSECURE: 'web developer',
-        INSECURE_ALL: 'web developer',
-        INSECURE_SEO: 'web developer',
-        INSECURE_SLOW: 'web developer',
-        WEBSITE_DOWN: 'web developer',
-        NO_WEBSITE: 'web developer',
-        MOBILE: 'web developer',
-        AUTOMATION: 'software engineer'
-    };
-    const role = roles[scenario] || 'software engineer';
-
     const templates = {
         AUTOMATION: {
-            subject: `${businessName} — something your competitors are doing`,
+            subject: `${businessName} — your online presence is solid, here's what's next`,
             body: `Hi,
 
-I noticed ${businessName}'s website is ahead of most, but you're missing a key automation gap. Competitors who automate their follow-ups are closing 40-60% more business from the exact same traffic you already have.
+${businessName}'s site is genuinely ahead of most businesses I come across — fast, clean, visible.
 
-I’m a ${role} and I specialize in turning existing traffic into booked business. 
+What I build for businesses at this stage is a system that turns that presence into booked leads automatically. Follow-ups, outreach, and lead management running on their own while you just monitor.
 
-If you'd like, I can show you how to close this gap today.`
+Worth a 10-minute conversation?`
         },
 
         BAD_SEO: {
-            subject: `${businessName} — Google is showing it to almost nobody`,
+            subject: `${businessName} — Google is sending your customers elsewhere`,
             body: `Hi,
 
-I noticed ${businessName} has a real business, but Google is showing it to almost nobody. Customers in ${loc} are searching for you right now, but they're finding your competitors because of a few tiny technical missing pieces on your site.
+${businessName}'s site is live but Google isn't ranking it for searches in ${loc}. Customers looking for exactly what you offer are finding competitors instead — not because competitors are better, but because their SEO is structured correctly and yours isn't.
 
-I’m a ${role} and fixing these visibility issues is exactly what I do.
+I'm a web developer and I fix this exact problem. One of my recent clients went from invisible to page one in their local area within weeks.
 
-If you'd like, I can show you exactly what Google can't see today.`
+Worth a 10-minute conversation?`
         },
 
         SEO_AND_SPEED: {
-            subject: `${businessName} is losing customers to competitors`,
+            subject: `${businessName} — two things sending customers to competitors`,
             body: `Hi,
 
-I noticed ${businessName} is losing customers to fast competitors right now. Your site takes ${load} to load, and your SEO is incomplete. Google sees this and quietly moves faster businesses above you.
+${businessName}'s site takes ${load} to load and Google isn't ranking it properly in ${loc}. These two problems feed each other — slow sites rank lower, lower ranking means less traffic, less traffic means fewer customers finding you.
 
-I’m a ${role} and I specialized in getting websites working exactly how they should be.
+I'm a web developer and I've fixed this exact combination before. Both are quicker to solve than most people expect.
 
-If you'd like, I can show you exactly how to fix both today.`
+Worth a 10-minute conversation?`
         },
 
         INSECURE: {
-            subject: `${businessName} — website shows a "Not Secure" warning`,
+            subject: `${businessName} — visitors see a warning before they see your business`,
             body: `Hi,
 
-I noticed ${businessName}'s website shows a “Not Secure” warning on Google. Most visitors close sites immediately when they see this warning before they even read a word.
+I checked ${businessName}'s site and browsers are showing a "Not Secure" warning to every visitor. Most people see that and leave straight away — they never even get to see what your business actually offers.
 
-I’m a ${role} and fixing this is usually very quick.
+I'm a web developer and I've fixed this for businesses before. Right now it's costing you customers every single day.
 
-If you'd like, I can show you exactly what's causing it.`
+Worth a 10-minute conversation?`
         },
 
         INSECURE_ALL: {
-            subject: `${businessName} — website has a few roadblocks`,
+            subject: `${businessName} — three things quietly costing you customers`,
             body: `Hi,
 
-I noticed ${businessName}'s website is flagged as insecure, takes ${load} to load, and Google isn't finding it in ${loc}. These three separate problems are compounding and silently moving your customers to competitors.
+I checked ${businessName}'s site and browsers are showing a "Not Secure" warning, it takes ${load} to load, and Google isn't ranking it in ${loc}. Each one on its own loses customers — together they make it worse.
 
-I’m a ${role} and I can resolve all three today so your site works the way it should.
+I'm a web developer and I've fixed this exact combination before. All three are quicker to solve than most people expect.
 
-If you'd like, I can send you a full breakdown today.`
+Worth a 10-minute conversation?`
         },
 
         WEBSITE_DOWN: {
-            subject: `${businessName} — website is currently down`,
+            subject: `${businessName} — your website is down right now`,
             body: `Hi,
 
-I noticed ${businessName}'s website is currently down and unreachable. Every hour it stays down, customers searching for your service in ${loc} hit a dead end and call your competitors instead.
+I just checked ${businessName}'s site and it's completely unreachable. Anyone searching for you in ${loc} right now is hitting a dead end and calling your competitors instead.
 
-I’m a ${role} and I can get it back up quickly for you.
+I'm a web developer and getting sites back up fast is something I've done before. The longer it stays down the more customers you lose today.
 
-If you'd like, I can look into it today.`
+Worth a quick call?`
         },
 
         SLOW_LOAD: {
-            subject: `${businessName} — website is losing visitors to load time`,
+            subject: `${businessName} — your site is losing visitors to load time`,
             body: `Hi,
 
-I noticed ${businessName}'s website takes ${load} to load. Most visitors abandon a page within seconds if it's slow, and Google quietly ranks faster competitors above you in ${loc} as a result.
+${businessName}'s site takes ${load} to load. Most visitors leave within seconds if a page is slow, and Google quietly ranks faster competitors above you in ${loc} as a result.
 
-I’m a ${role} and making sites fast enough to convert visitors is my specialty.
+I'm a web developer and making sites fast is something I specialize in. This is quicker to fix than most people expect.
 
-If you'd like, I can show you exactly how to fix it today.`
+Worth a 10-minute conversation?`
         },
 
         NO_WEBSITE: {
-            subject: `${businessName} — customers searching for you can't find you`,
+            subject: `${businessName} — customers in ${loc} can't find you online`,
             body: `Hi,
 
-I noticed ${businessName} doesn't have a website yet. 81% of customers research businesses online first, so without one you're invisible to almost every customer searching in ${loc}.
+I looked up ${businessName} and couldn't find a website. Most people in ${loc} search online before they call anyone — right now they're finding your competitors instead of you.
 
-I’m a ${role} and I build professional sites that get small businesses in front of local customers.
+I'm a web developer and I build clean professional sites that show up in local searches. I've done this for businesses similar to yours.
 
-If you'd like, I can get you live and showing up in searches within 7 days.`
+Worth a 10-minute conversation?`
         },
 
         MOBILE: {
-            subject: `${businessName} — visitors on mobile are having a hard time`,
+            subject: `${businessName} — mobile visitors are having a hard time`,
             body: `Hi,
 
-I noticed ${businessName}'s website works on desktop but is broken for mobile visitors. Over 60% of people finding you use their phones, and right now they're getting a broken, hard-to-navigate experience that sends them straight to a competitor.
+${businessName}'s site works on desktop but is broken for mobile visitors. Over 60% of people finding you use their phones, and right now they're getting a broken experience that sends them straight to a competitor.
 
-I’m a ${role} and I specialized in building mobile-first sites that actually convert.
+I'm a web developer and I've fixed this for businesses before. Mobile traffic is too valuable to lose.
 
-If you'd like, I can show you what your visitors on mobile are seeing right now.`
+Worth a 10-minute conversation?`
         },
 
         INSECURE_SEO: {
-            subject: `${businessName} — website has a few technical gaps`,
+            subject: `${businessName} — visitors don't trust it and Google can't find it`,
             body: `Hi,
 
-I noticed ${businessName}'s website has a "Not Secure" warning and Google isn't properly indexing you for searches in ${loc}. These two gaps are silently costing you customers every single day.
+I checked ${businessName}'s site and browsers are showing a "Not Secure" warning, and Google isn't ranking it properly in ${loc}. These two problems feed each other — insecure sites rank lower, lower ranking means less traffic.
 
-I’m a ${role} and I specialize in fixing these exact problems for local businesses.
+I'm a web developer and I've fixed this exact combination before. Both are quicker to solve than most people expect.
 
-If you'd like, I can show you how to resolve both today.`
+Worth a 10-minute conversation?`
         },
 
         INSECURE_SLOW: {
-            subject: `${businessName} — website has a few roadblocks`,
+            subject: `${businessName} — visitors are leaving before they see your business`,
             body: `Hi,
 
-I noticed ${businessName}'s website is flagged as insecure and takes ${load} to load. Most visitors leave the moment they see the browser warning or the slow load time before they ever see what you offer.
+I checked ${businessName}'s site and browsers are showing a "Not Secure" warning, and it takes ${load} to load. Most visitors leave the moment they see the browser warning or the slow load time before they ever see what you offer.
 
-I’m a ${role} and I specialize in getting websites working properly for the business.
+I'm a web developer and I've fixed this exact combination before. Both are quicker to solve than most people expect.
 
-If you'd like, I can show you how to fix both today.`
+Worth a 10-minute conversation?`
         }
     };
 
     return templates[scenario] || templates['AUTOMATION'];
 };
 
-// ─── SCENARIO DETECTION ───────────────────────────────────────────────────
 const detectScenario = (lead) => {
     const { website, seoTitle, seoDescription, isResponsive, loadTime, name: businessName } = lead;
 
@@ -276,9 +249,6 @@ const detectScenario = (lead) => {
     return 'AUTOMATION';
 };
 
-/**
- * Outreach Body Generator
- */
 const generateOutreachBody = async (lead) => {
     if (!clientPrimary) throw new Error('AI API keys missing. Cannot generate AI email.');
 
@@ -290,19 +260,19 @@ const generateOutreachBody = async (lead) => {
     logger.info(`📧 Generating email for "${businessName}" | Scenario: ${scenario}`);
 
     const prompt = `### TASK
-You are Hamdan Ahmad, a direct and busy developer. Your only job is to REPHRASE the provided email template by making ONLY MINOR CHANGES. It must always sound human-like and use casual words.
+You are Hamdan Ahmad. Your ONLY job is to rephrase this email template by changing ONLY 5-10% of the words — specifically helper words like "is", "am", "are", "was", "were", "has", "have", "will", "can", "could", "would". DO NOT change actual content words, business names, numbers, or the core message.
 
 ### RULES
-1. ONLY MINOR REPHRASING. Keep the core structure and tone identical.
-2. DO NOT change stats or business names.
-3. SUBJECT ALWAYS STARTS WITH THE BUSINESS NAME.
-4. Keep the "Hi," greeting on its OWN LINE with a line break AFTER it.
-5. Every logical part (Problem, Who/Role, CTA) MUST have a blank line (Double Line Break) between them.
-6. DO NOT use emojis or corporate fluff.
-7. DO NOT use words like: "outstand", "leverage", "boost", "skyrocket".
-8. Target 60-70 words total.
+1. Change ONLY 5-10% — helper/linking words like is/am/are/was/were/has/have/will/can/could/would
+2. DO NOT change: business names, numbers, statistics, city names, technical terms, or any meaningful content words
+3. Keep subject line EXACTLY as provided
+4. Keep "Hi," greeting on its OWN LINE with line break after it
+5. Keep all paragraph breaks exactly as they are (double line breaks between paragraphs)
+6. Keep 3-4 paragraphs maximum
+7. DO NOT add emojis or corporate words like "leverage", "boost", "skyrocket", "outstanding"
+8. The email must remain 60-80 words total
 
-### THE TEMPLATE TO REPHRASE
+### THE TEMPLATE TO REPHRASE (change only 5-10% helper words)
 Subject: ${template.subject}
 
 Body:
@@ -327,9 +297,6 @@ Return ONLY valid JSON: { "subject": "...", "body": "..." }`;
     }
 };
 
-/**
- * Follow-up Body Generator 
- */
 const generateFollowUpBody = async (lead) => {
     if (!clientPrimary) throw new Error('AI API keys missing. Cannot generate AI email.');
 
@@ -344,7 +311,7 @@ const generateFollowUpBody = async (lead) => {
             subject: `${businessName} — just following up`,
             body: `Hi,
 
-I sent a note a few days ago about the automation gap on your site. Competitors using this are closing 40-60% more business from the same visitors you already have while you're busy.
+I sent a note a few days ago about the automation gap on your site. Competitors using this are getting more from the same traffic you already have while you're busy.
 
 Still happy to show you how to close it today. Reply if you'd like to chat.`
         },
@@ -376,7 +343,7 @@ Happy to send you a full breakdown today if you'd like to fix it. Just reply.`
             subject: `${businessName} — the "not secure" warning is still there`,
             body: `Hi,
 
-Just following up on that security warning on your site. It's still driving visitors away before they ever see what you offer. It's a quick technical fix that builds immediate trust.
+Just following up on that security warning on your site. Every day it stays there, visitors are leaving before they ever see what you offer.
 
 I can show you exactly how to fix it today if you're interested. Just reply.`
         },
@@ -384,7 +351,7 @@ I can show you exactly how to fix it today if you're interested. Just reply.`
             subject: `${businessName} — those roadblocks are still there`,
             body: `Hi,
 
-Just circling back on those technical gaps I noticed. The security warning, slow load time, and SEO gaps are all still compounding and costing you customers daily in ${loc}.
+Just circling back on those technical gaps I noticed. The security warning, slow load time, and SEO gaps are all still there — and still sending customers to competitors in ${loc} every day.
 
 Still happy to send you a full breakdown today. Just reply.`
         },
@@ -413,12 +380,12 @@ Just following up on your site speed. At ${load}, Google is still quietly rankin
 Happy to send you a full breakdown today. Just reply.`
         },
         NO_WEBSITE: {
-            subject: `${businessName} — still no website, still invisible online`,
+            subject: `${businessName} — customers in ${loc} still can't find you`,
             body: `Hi,
 
-I sent a note a few days ago about building a site for ${businessName}. Without one, you're invisible to the 81% of customers researching businesses in ${loc} before they call.
+I sent a note a few days ago about ${businessName} not having a website. Most people in ${loc} search online before they call anyone — right now every one of them is finding your competitors instead.
 
-I can still have you live in 7 days. Reply if you're interested.`
+Still happy to help you get online. Just reply.`
         },
         MOBILE: {
             subject: `${businessName} — mobile visitors are still leaving`,
@@ -466,9 +433,6 @@ Return ONLY valid JSON: { "subject": "...", "body": "..." }`;
     }
 };
 
-/**
- * Uses AI to rank emails by decision-maker value
- */
 const rankEmailsWithAI = async (businessName, emails) => {
     if (!emails || emails.length <= 1) return emails || [];
 
