@@ -18,18 +18,28 @@ jobs:
           username: ec2-user
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Update local repo
+            # Navigate to repo
             cd ~/LeadGenAutomation || git clone https://github.com/${{ github.repository }} ~/LeadGenAutomation
             cd ~/LeadGenAutomation
             git checkout ${{ github.ref_name }}
             git pull origin ${{ github.ref_name }}
 
-            # Ensure Docker Compose is up to date
+            # Create/Update .env file on the server using secrets
+            echo "DATABASE_URL=postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@db:5432/leadsdb?schema=public" > .env
+            echo "REDIS_URL=redis://redis:6379" >> .env
+            echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
+            echo "OPENAI_KEY=${{ secrets.OPENAI_KEY }}" >> .env
+            echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}" >> .env
+            echo "App_Pass=${{ secrets.App_Pass }}" >> .env
+            # Add any other required variables here...
+
+            # Restart services
             docker-compose down
             docker-compose up -d --build
 
             # Run Prisma Migrations
             docker-compose exec -T backend npx prisma migrate deploy
 
-            # Optional: Clean up old images to save space on t3.micro
+            # Cleanup
             docker image prune -f
