@@ -5,7 +5,7 @@ const Loader: React.FC = () => {
     return (
         <div className="loader-container">
             <div className="loader-content">
-                <h2 className="loader-title">Trobyx</h2>
+                <h2 className="loader-title">Automating</h2>
                 <div className="loading-bar">
                     <div className="loading-bar--progress">
                         <span className="first"></span>
