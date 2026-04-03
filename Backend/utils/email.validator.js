@@ -1,30 +1,42 @@
 const validator = require('email-validator');
-const emailExistence = require('email-existence');
+const dns = require('dns');
+const { promisify } = require('util');
 const logger = require('./logger');
 
+const resolveMx = promisify(dns.resolveMx);
+
 /**
- * Validates email existence using SMTP/MX check
+ * Validates domain mail servers using DNS MX records
+ * This completely bypasses the AWS Port 25 block because it uses Port 53 (DNS)
  * @param {string} email 
  * @returns {Promise<boolean>}
  */
-const checkExistence = (email) => {
-    return new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-            logger.warn(`🕒 SMTP timeout for ${email} - skipping...`);
-            resolve(false);
-        }, 10000); // 10s Timeout
+const checkExistence = async (email) => {
+    return new Promise(async (resolve) => {
+        try {
+            const domain = email.split('@')[1];
+            if (!domain) return resolve(false);
 
-        emailExistence.check(email, (error, response) => {
+            // Fast timeout for DNS resolution (3 seconds)
+            const timeout = setTimeout(() => {
+                logger.warn(`🕒 DNS timeout for ${domain} - skipping...`);
+                resolve(false);
+            }, 3000);
+
+            const mxRecords = await resolveMx(domain);
             clearTimeout(timeout);
-            if (error) {
-                logger.debug(`📧 Existence check error for ${email}: ${error.message}`);
-                return resolve(false);
+            
+            if (mxRecords && mxRecords.length > 0) {
+                resolve(true); // Domain has active mail servers
+            } else {
+                resolve(false);
             }
-            resolve(response);
-        });
+        } catch (error) {
+            logger.debug(`📧 MX check error for ${email}: ${error.code || error.message}`);
+            resolve(false);
+        }
     });
 };
-
 /**
  * Full Email Validation Pipeline
  * 1. Syntax check (email-validator)
