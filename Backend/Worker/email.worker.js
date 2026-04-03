@@ -76,28 +76,52 @@ const startEmailWorker = () => {
 
         // Step 5: Database Update
         const isEnriched = !!chosenEmail;
-        await prisma.lead.update({
-          where: { id: leadId },
-          data: {
-            email: chosenEmail,
-            emailExtracted: true,
-            websiteVisited: true,
-            status: isEnriched ? 'ENRICHED' : 'NO_EMAIL_FOUND',
-            seoTitle,
-            seoDescription,
-            loadTime,
-            isResponsive
+        try {
+          await prisma.lead.update({
+            where: { id: leadId },
+            data: {
+              email: chosenEmail,
+              emailExtracted: true,
+              websiteVisited: true,
+              status: isEnriched ? 'ENRICHED' : 'NO_EMAIL_FOUND',
+              seoTitle,
+              seoDescription,
+              loadTime,
+              isResponsive
+            }
+          });
+
+          if (isEnriched) {
+            const qualityStr = bestScore === 2 ? 'VERIFIED (Live)' : (bestScore === 1 ? 'AI LIKELY (Domain Match)' : 'POSSIBLE');
+            logger.info(`✅ Winning email saved for lead #${leadId}: ${chosenEmail} | Quality: ${qualityStr}`);
+          } else {
+            logger.warn(`❌ No working email found for lead #${leadId}.`);
           }
-        });
 
-        if (isEnriched) {
-          const qualityStr = bestScore === 2 ? 'VERIFIED (Live)' : (bestScore === 1 ? 'AI LIKELY (Domain Match)' : 'POSSIBLE');
-          logger.info(`✅ Winning email saved for lead #${leadId}: ${chosenEmail} | Quality: ${qualityStr}`);
-        } else {
-          logger.warn(`❌ No working email found for lead #${leadId}.`);
+          logger.info(`✅ Job ${job.id} for lead #${leadId} completed. Status: ${isEnriched ? 'ENRICHED' : 'NO_EMAIL_FOUND'}`);
+
+        } catch (dbErr) {
+          // Prisma Unique Constraint Violation (Email already exists on another lead)
+          if (dbErr.code === 'P2002') {
+            logger.warn(`♻️ Duplicate email found for lead #${leadId} (${chosenEmail}). Lead saved as DUPLICATE_EMAIL.`);
+            
+            await prisma.lead.update({
+              where: { id: leadId },
+              data: {
+                email: null, // Don't save the duplicate email
+                emailExtracted: true,
+                websiteVisited: true,
+                status: 'DUPLICATE_EMAIL',
+                seoTitle,
+                seoDescription,
+                loadTime,
+                isResponsive
+              }
+            });
+          } else {
+            throw dbErr; // Rethrow actual unexpected DB errors so they trigger retries
+          }
         }
-
-        logger.info(`✅ Job ${job.id} for lead #${leadId} completed. Status: ${isEnriched ? 'ENRICHED' : 'NO_EMAIL_FOUND'}`);
 
         // 🔔 Check for Batch Completion
         const lead = await prisma.lead.findUnique({
