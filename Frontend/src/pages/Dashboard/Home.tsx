@@ -97,7 +97,7 @@ const Home = () => {
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/scraper/jobs?limit=200`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });

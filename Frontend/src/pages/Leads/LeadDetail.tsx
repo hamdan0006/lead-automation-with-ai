@@ -48,7 +48,7 @@ const LeadDetail: React.FC = () => {
   const fetchLeads = async (page = 1, leadType = filterLeadType) => {
     setIsLoading(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const queryParams = new URLSearchParams({
         page: page.toString(),
         limit: '50'

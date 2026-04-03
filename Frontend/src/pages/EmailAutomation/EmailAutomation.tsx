@@ -30,7 +30,7 @@ const EmailAutomation: React.FC = () => {
     const fetchJobs = async (page = 1) => {
         setIsLoading(true);
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiUrl = import.meta.env.VITE_API_URL || '';
             const response = await fetch(`${apiUrl}/scraper/jobs?page=${page}&limit=10`, {
                 headers: {
                     'Authorization': `Bearer ${token}`

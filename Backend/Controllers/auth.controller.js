@@ -18,9 +18,9 @@ const register = async (req, res) => {
     logger.error(`Registration error: ${error.message}`);
     // Keep error messages generic for the user or pass the explicit error if it's a known conflict
     if (error.message.includes('already exists') || error.message.includes('taken')) {
-        return res.status(409).json({ success: false, message: error.message });
+      return res.status(409).json({ success: false, message: error.message });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'An error occurred during registration.'
@@ -44,9 +44,9 @@ const login = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Login error: ${error.message}`);
-    
+
     if (error.message === 'Invalid email or password.') {
-        return res.status(401).json({ success: false, message: error.message });
+      return res.status(401).json({ success: false, message: error.message });
     }
 
     res.status(500).json({

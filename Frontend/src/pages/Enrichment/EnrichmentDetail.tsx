@@ -41,7 +41,7 @@ const EnrichmentDetail: React.FC = () => {
   const fetchLeads = async (page = 1, silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/scraper/jobs/${jobId}/leads?page=${page}&limit=50`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -109,7 +109,7 @@ const EnrichmentDetail: React.FC = () => {
     if (!jobId) return;
     setIsEnriching(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/scraper/extract-emails`, {
         method: 'POST',
         headers: {

@@ -10,7 +10,7 @@ const VerifyEmail = () => {
     const [status, setStatus] = useState<'verifying' | 'success' | 'error' | 'idle'>('verifying');
     const [email, setEmail] = useState('');
     const [isResending, setIsResending] = useState(false);
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://192.168.1.56:3000';
+    const apiUrl = import.meta.env.VITE_API_URL || '';
 
     const hasAttempted = useRef(false);
 

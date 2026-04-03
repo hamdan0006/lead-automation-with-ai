@@ -63,7 +63,7 @@ const ResetPassword = () => {
         setError('');
 
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://192.168.1.56:3000';
+            const apiUrl = import.meta.env.VITE_API_URL || '';
             const response = await fetch(`${apiUrl}/api/auth/reset-password`, {
                 method: 'POST',
                 headers: {

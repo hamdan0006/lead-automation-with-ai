@@ -72,7 +72,7 @@ const CompletedAutomations: React.FC = () => {
                 return;
             }
 
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiUrl = import.meta.env.VITE_API_URL || '';
 
             const response = await fetch(`${apiUrl}/api/automation`, {
                 headers: {
@@ -113,7 +113,7 @@ const CompletedAutomations: React.FC = () => {
 
         try {
             const token = localStorage.getItem('accessToken');
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiUrl = import.meta.env.VITE_API_URL || '';
 
             const response = await fetch(`${apiUrl}/api/automation/${automationId}`, {
                 method: 'DELETE',

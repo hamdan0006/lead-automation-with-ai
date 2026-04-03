@@ -20,7 +20,7 @@ class SocketClient {
       return this.socket;
     }
 
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const backendUrl = import.meta.env.VITE_API_URL || '';
 
     console.log('Initializing Socket.IO connection to:', backendUrl);
 

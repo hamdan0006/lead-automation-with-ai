@@ -173,7 +173,7 @@ const ActiveAutomations: React.FC = () => {
                 return;
             }
 
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiUrl = import.meta.env.VITE_API_URL || '';
             console.log('Making request to:', `${apiUrl}/api/automation`); // Debug log
 
             const response = await fetch(`${apiUrl}/api/automation`, {
@@ -215,7 +215,7 @@ const ActiveAutomations: React.FC = () => {
     const pauseAutomation = async (automationId: string): Promise<void> => {
         try {
             const token = localStorage.getItem('accessToken');
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiUrl = import.meta.env.VITE_API_URL || '';
 
             const response = await fetch(
                 `${apiUrl}/api/automation/${automationId}/pause`,
@@ -244,7 +244,7 @@ const ActiveAutomations: React.FC = () => {
     const resumeAutomation = async (automationId: string): Promise<void> => {
         try {
             const token = localStorage.getItem('accessToken');
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiUrl = import.meta.env.VITE_API_URL || '';
 
             const response = await fetch(
                 `${apiUrl}/api/automation/${automationId}/resume`,
@@ -281,7 +281,7 @@ const ActiveAutomations: React.FC = () => {
 
         try {
             const token = localStorage.getItem('accessToken');
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiUrl = import.meta.env.VITE_API_URL || '';
 
             const response = await fetch(`${apiUrl}/api/automation/${automationId}`, {
                 method: 'DELETE',
