@@ -1,0 +1,35 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Update local repo
+            cd ~/LeadGenAutomation || git clone https://github.com/${{ github.repository }} ~/LeadGenAutomation
+            cd ~/LeadGenAutomation
+            git checkout ${{ github.ref_name }}
+            git pull origin ${{ github.ref_name }}
+
+            # Ensure Docker Compose is up to date
+            docker-compose down
+            docker-compose up -d --build
+
+            # Run Prisma Migrations
+            docker-compose exec -T backend npx prisma migrate deploy
+
+            # Optional: Clean up old images to save space on t3.micro
+            docker image prune -f
