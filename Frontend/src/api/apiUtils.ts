@@ -1,7 +1,7 @@
 // API utility functions for making authenticated requests
 import useAuthStore from '../stores/useAuthStore';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Type Definitions
 export interface ApiResponse<T = any> {
