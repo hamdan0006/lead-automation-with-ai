@@ -106,26 +106,6 @@ const LeadDetail: React.FC = () => {
     }
   }, [token, jobId]);
 
-  // Compute stats based on the current visible leads
-  const stats = useMemo(() => {
-    const total = leads.length;
-    if (total === 0) return { emailsFound: 0, mapsScraped: 0, progress: 0, overallProgress: 0 };
-    const emailsFound = leads.filter(l => l.email || l.emailExtracted).length;
-    const mapsScraped = leads.filter(l => l.mapsScraped).length;
-    
-    // Calculate overall progress from job stats
-    const overallProgress = jobStats.totalLeads > 0 
-      ? Math.round((jobStats.scrapedLeads / jobStats.totalLeads) * 100)
-      : Math.round((mapsScraped / total) * 100);
-    
-    return {
-      emailsFound,
-      mapsScraped,
-      progress: Math.round((mapsScraped / total) * 100),
-      overallProgress
-    };
-  }, [leads, jobStats]);
-
   return (
     <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
       <div className="flex flex-col mb-8 gap-4">

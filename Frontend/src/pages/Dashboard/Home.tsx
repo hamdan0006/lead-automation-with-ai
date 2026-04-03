@@ -1,15 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CheckCircle,
   Users,
   Plus,
   Zap,
-  Target,
   TrendingUp,
   ArrowRight,
   Mail,
-  Search,
   MapPin
 } from 'lucide-react';
 import Card from '../../components/ui/Card';
@@ -57,7 +55,6 @@ const Home = () => {
   const [rawStats, setRawStats] = useState<any>(null);
 
   const calculateStats = (scrapingJobs: ScrapingJob[], selectedPeriod: string) => {
-    const now = new Date();
 
     // Separate logic for Leads Discovered (Total) vs Outreach (Timed)
     const totals = scrapingJobs.reduce((acc: any, job: ScrapingJob) => {

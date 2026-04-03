@@ -136,37 +136,6 @@ const CompletedAutomations: React.FC = () => {
         }
     };
 
-    const downloadResults = async (automationId: string): Promise<void> => {
-        try {
-            const token = localStorage.getItem('accessToken');
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
-            const response = await fetch(`${apiUrl}/api/automation/${automationId}/results/download`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to download results');
-            }
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = `automation-${automationId}-results.csv`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-
-            toast.success('Results downloaded successfully');
-        } catch (error: any) {
-            console.error('Error downloading results:', error);
-            toast.error('Failed to download results');
-        }
-    };
 
     const getStatusColor = (status: Automation['status']): "success" | "error" | "light" => {
         switch (status) {

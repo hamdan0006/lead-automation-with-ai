@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, Search, RefreshCw, Eye, Send, MapPin, CheckCircle } from 'lucide-react';
+import { Zap, Search, RefreshCw, Eye, Send, MapPin } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import useAuthStore from '../../stores/useAuthStore';
 

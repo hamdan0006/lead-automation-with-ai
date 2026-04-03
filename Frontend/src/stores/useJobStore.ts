@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiGet, apiPost, apiPut, handleApiError } from '../api/apiUtils';
+import { apiGet, apiPost, apiPut } from '../api/apiUtils';
 
 // Types
 export interface Job {
