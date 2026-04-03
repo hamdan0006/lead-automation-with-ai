@@ -18,11 +18,15 @@ jobs:
           username: ec2-user
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Navigate to repo
-            cd ~/LeadGenAutomation || git clone https://github.com/${{ github.repository }} ~/LeadGenAutomation
+            # Ensure the repository is present
+            if [ ! -d "LeadGenAutomation" ]; then
+              git clone https://github.com/${{ github.repository }} ~/LeadGenAutomation
+            fi
             cd ~/LeadGenAutomation
-            git checkout ${{ github.ref_name }}
-            git pull origin ${{ github.ref_name }}
+            
+            # Update code
+            git fetch --all
+            git reset --hard origin/${{ github.ref_name }}
 
             # Create/Update .env file on the server using secrets
             echo "DATABASE_URL=postgresql://postgres:${{ secrets.POSTGRES_PASSWORD }}@db:5432/leadsdb?schema=public" > .env
@@ -48,11 +52,11 @@ jobs:
             echo "SERPSTACK_API_URL=${{ secrets.SERPSTACK_API_URL }}" >> .env
 
             # Restart services
-            docker-compose down
-            docker-compose up -d --build
+            docker compose down --remove-orphans
+            docker compose up -d --build
 
             # Run Prisma Migrations
-            docker-compose exec -T backend npx prisma migrate deploy
+            docker compose exec -T backend npx prisma migrate deploy
 
             # Cleanup
             docker image prune -f
