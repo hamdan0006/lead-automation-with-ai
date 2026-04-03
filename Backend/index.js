@@ -40,8 +40,8 @@ app.use((req, res, next) => {
 // =======================
 // Route Mounting
 // =======================
-app.use('/health', healthRoutes);
-app.use('/scraper', scraperRoutes);
+app.use('/api/health', healthRoutes);
+app.use('/api/scraper', scraperRoutes);
 app.use('/api/auth', authRoutes);
 
 // Fallback Route
