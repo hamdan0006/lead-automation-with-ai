@@ -19,8 +19,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             # Ensure the repository is present
-            if [ ! -d "LeadGenAutomation" ]; then
-              git clone https://github.com/${{ github.repository }} ~/LeadGenAutomation
+            if [ ! -d "LeadGenAutomation" ] || [ ! -d "LeadGenAutomation/.git" ]; then
+              rm -rf ~/LeadGenAutomation
+              git clone https://github.com/hamdan0006/lead-automation-with-ai.git ~/LeadGenAutomation
             fi
             cd ~/LeadGenAutomation
             
@@ -33,12 +34,12 @@ jobs:
             echo "REDIS_URL=redis://redis:6379" >> .env
             echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
             echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
-            echo "App_Pass=${{ secrets.App_Pass }}" >> .env
+            echo "App_Pass=${{ secrets.APP_PASS }}" >> .env
             echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}" >> .env
             echo "NOTIFICATION_EMAIL=${{ secrets.NOTIFICATION_EMAIL }}" >> .env
             echo "OPENAI_KEY=${{ secrets.OPENAI_KEY }}" >> .env
-            echo "Llama_KEY=${{ secrets.Llama_KEY }}" >> .env
-            echo "Nvidia_super3=${{ secrets.Nvidia_super3 }}" >> .env
+            echo "Llama_KEY=${{ secrets.LLAMA_KEY }}" >> .env
+            echo "Nvidia_super3=${{ secrets.NVIDIA_SUPER3 }}" >> .env
             echo "SERPSTACK_API_KEY1=${{ secrets.SERPSTACK_API_KEY1 }}" >> .env
             echo "SERPSTACK_API_KEY2=${{ secrets.SERPSTACK_API_KEY2 }}" >> .env
             echo "SERPSTACK_API_KEY3=${{ secrets.SERPSTACK_API_KEY3 }}" >> .env
@@ -52,11 +53,11 @@ jobs:
             echo "SERPSTACK_API_URL=${{ secrets.SERPSTACK_API_URL }}" >> .env
 
             # Restart services
-            docker compose down --remove-orphans
-            docker compose up -d --build
+            docker-compose down --remove-orphans
+            docker-compose up -d --build
 
             # Run Prisma Migrations
-            docker compose exec -T backend npx prisma migrate deploy
+            docker-compose exec -T backend npx prisma migrate deploy
 
             # Cleanup
             docker image prune -f
