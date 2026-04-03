@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     fonts-liberation \
     libasound2 \
-    matlab-support \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
     libc6 \

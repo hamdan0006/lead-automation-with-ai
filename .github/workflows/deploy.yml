@@ -54,7 +54,7 @@ jobs:
 
             # Restart services
             docker-compose down --remove-orphans
-            docker-compose up -d --build
+            DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose up -d --build
 
             # Run Prisma Migrations
             docker-compose exec -T backend npx prisma migrate deploy
