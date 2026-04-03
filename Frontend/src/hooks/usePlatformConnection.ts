@@ -81,7 +81,7 @@ export const usePlatformConnection = (platform?: PlatformType): UsePlatformConne
             // So apiGet likely returns the full response object.
 
             console.log(`Checking connection for ${platform}...`);
-            const response = await apiGet<ApiResponse<PlatformConnection>>(
+            const response = await apiGet<PlatformConnection>(
                 `/users/platform-connections/${platform.toLowerCase()}`
             );
             console.log(`API Response for ${platform}:`, response);
@@ -187,7 +187,7 @@ export const useStrictPlatformConnection = (
             setIsLoading(true);
             setError(null);
 
-            const response = await apiGet<ApiResponse<PlatformConnection>>(
+            const response = await apiGet<PlatformConnection>(
                 `/users/platform-connections/${platform.toLowerCase()}`
             );
 

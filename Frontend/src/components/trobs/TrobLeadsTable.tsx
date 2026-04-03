@@ -30,10 +30,14 @@ export interface Lead {
     location: string;
     profileImage?: string;
 
-    follower_count: number;
+    follower_count?: number;
     mutual_connection_count?: number;
-    is_following_back: boolean;
-    profile_url: string;
+    is_following_back?: boolean;
+    profile_url?: string;
+    profileUrl?: string;
+    aiScore?: number;
+    status?: string;
+    matchQuality?: string;
 
     foundAt: string;
 }
@@ -205,7 +209,7 @@ const TrobLeadsTable: React.FC<TrobLeadsTableProps> = ({
                                             <div className="flex items-center gap-1 text-[11px] text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
                                                 <Users size={10} className="text-gray-500" />
                                                 <span className="font-semibold">
-                                                    {lead.follower_count.toLocaleString()}
+                                                    {(lead.follower_count ?? 0).toLocaleString()}
                                                 </span>
                                             </div>
 
