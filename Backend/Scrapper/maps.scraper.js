@@ -42,8 +42,26 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
     logger.info(`Navigating to: ${searchUrl}`);
     await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+    // 🍪 HANDLE COOKIE CONSENT BANNER (Often blocks the screen on cloud IPs)
+    try {
+      logger.info('Checking for Google Cookie Consent popup...');
+      const acceptButton = await page.waitForSelector('button[aria-label="Accept all"], form[action*="consent"] button', { timeout: 5000 });
+      if (acceptButton) {
+        logger.info('Google Consent popup found. Clicking Accept...');
+        await acceptButton.click();
+        await sleep(3000); // Wait for the UI to unlock
+      }
+    } catch (e) {
+      logger.info('No cookie consent popup detected (Normal).');
+    }
+
     // Wait for the feed container to appear (this holds the listings)
-    await page.waitForSelector('div[role="feed"]', { timeout: 15000 });
+    try {
+        await page.waitForSelector('div[role="feed"]', { timeout: 45000 });
+    } catch (err) {
+        logger.error(`Could not find the Maps feed container within 45s. The page structure might have changed or Google blocked the IP.`);
+        throw err;
+    }
 
     const processedLinks = new Set(); // Keep track of links we've visited in THIS run
 
