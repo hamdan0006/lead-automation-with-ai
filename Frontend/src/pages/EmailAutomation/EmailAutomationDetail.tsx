@@ -47,6 +47,11 @@ const EmailAutomationDetail: React.FC = () => {
     emailsExtracted: 0,
     totalPages: 1 
   });
+  const [overallStats, setOverallStats] = useState({
+    totalLeads: 0,
+    contacted: 0,
+    emailsExtracted: 0
+  });
 
   const fetchLeads = async (page = 1, silent = false) => {
     if (!silent) setIsLoading(true);
@@ -79,6 +84,15 @@ const EmailAutomationDetail: React.FC = () => {
           emailsExtracted: data.pagination.emailsExtracted || 0,
           totalPages: data.pagination.totalPages
         });
+        
+        // Store overall stats (only when no filter is applied)
+        if (filter === 'all') {
+          setOverallStats({
+            totalLeads: data.pagination.total,
+            contacted: data.pagination.contacted || 0,
+            emailsExtracted: data.pagination.emailsExtracted || 0
+          });
+        }
       }
     } catch (error) {
       console.error(error);
@@ -135,16 +149,16 @@ const EmailAutomationDetail: React.FC = () => {
     }
   };
 
-  // Compute stats based on the global backend stats for accurate total tracking
+  // Compute stats based on overall job stats (not filtered results)
   const stats = useMemo(() => {
-    const total = pagination.total;
+    const total = overallStats.totalLeads;
     if (total === 0) return { contacted: 0, emailsFound: 0, progress: 0 };
     return {
-      contacted: pagination.contacted,
-      emailsFound: pagination.emailsExtracted,
-      progress: Math.round((pagination.contacted / total) * 100)
+      contacted: overallStats.contacted,
+      emailsFound: overallStats.emailsExtracted,
+      progress: Math.round((overallStats.contacted / total) * 100)
     };
-  }, [pagination]);
+  }, [overallStats]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= pagination.totalPages) {
@@ -170,14 +184,15 @@ const EmailAutomationDetail: React.FC = () => {
             <div>
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Batch #{jobId} Detail</h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {pagination.total} leads total · Page {pagination.page} of {pagination.totalPages}
+                {overallStats.totalLeads} leads total · Page {pagination.page} of {pagination.totalPages}
+                {filter !== 'all' && ` · Filtered: ${pagination.total} results`}
               </p>
             </div>
           </div>
 
           <button
             onClick={handleStartAutomation}
-            disabled={isAutomating || pagination.total === 0 || pagination.queued > 0}
+            disabled={isAutomating || overallStats.totalLeads === 0 || pagination.queued > 0}
             className={`flex items-center justify-center gap-2 px-6 py-3 font-medium rounded-xl transition-all shadow-md hover:shadow-lg w-full md:w-auto ${
               (isAutomating || pagination.queued > 0) 
               ? 'bg-gray-400 text-white cursor-not-allowed opacity-70' 
@@ -200,7 +215,7 @@ const EmailAutomationDetail: React.FC = () => {
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-end">
                   <span className="text-3xl font-bold text-gray-900 dark:text-white">{stats.progress}%</span>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">{stats.contacted} / {pagination.total} Contacted</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{stats.contacted} / {overallStats.totalLeads} Contacted</span>
                 </div>
                 <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
                   <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${stats.progress}%` }}></div>
@@ -226,7 +241,7 @@ const EmailAutomationDetail: React.FC = () => {
               </div>
               <div className="flex gap-4">
                 <div className="flex flex-col">
-                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{pagination.total - stats.contacted}</span>
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{overallStats.totalLeads - stats.contacted}</span>
                   <span className="text-xs text-gray-500">Pending</span>
                 </div>
                 <div className="w-px bg-gray-200 dark:bg-gray-700"></div>
