@@ -161,14 +161,27 @@ const getLeadsByJobId = async (req, res) => {
     const { jobId } = req.params;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
-    const { leadType } = req.query; // 👈 Extract from query
+    const { leadType, filter } = req.query;
 
     const skip = (page - 1) * limit;
 
-    // 👈 Build dynamic base filter
+    // Build dynamic base filter
     const whereClause = { scrapingJobId: parseInt(jobId) };
     if (leadType) {
       whereClause.leadType = leadType;
+    }
+
+    // Apply additional filters
+    if (filter === 'no-email') {
+      whereClause.OR = [
+        { email: null },
+        { email: '' }
+      ];
+    } else if (filter === 'contacted') {
+      whereClause.status = { in: ['CONTACTED', 'FOLLOW_UP'] };
+      whereClause.receivedReply = false; // Exclude replied leads
+    } else if (filter === 'replied') {
+      whereClause.receivedReply = true;
     }
 
     const [job, leads, totalCount, queuedCount, contactedCount, emailsFoundCount] = await Promise.all([
@@ -177,29 +190,29 @@ const getLeadsByJobId = async (req, res) => {
         select: { status: true }
       }),
       prisma.lead.findMany({
-        where: whereClause, //  Apply base filter
+        where: whereClause,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' }
       }),
       prisma.lead.count({
-        where: whereClause // Apply base filter
+        where: whereClause
       }),
       prisma.lead.count({
         where: {
-          ...whereClause,
+          scrapingJobId: parseInt(jobId),
           status: 'QUEUED'
         }
       }),
       prisma.lead.count({
         where: {
-          ...whereClause,
+          scrapingJobId: parseInt(jobId),
           status: { in: ['CONTACTED', 'FOLLOW_UP', 'REPLIED'] }
         }
       }),
       prisma.lead.count({
         where: {
-          ...whereClause,
+          scrapingJobId: parseInt(jobId),
           email: { not: null, not: '' }
         }
       })

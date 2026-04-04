@@ -26,6 +26,7 @@ interface Lead {
   mapsScraped: boolean;
   keyword: string | null;
   createdAt: string;
+  receivedReply: boolean;
 }
 
 const EmailAutomationDetail: React.FC = () => {
@@ -36,6 +37,7 @@ const EmailAutomationDetail: React.FC = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAutomating, setIsAutomating] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'no-email' | 'replied' | 'contacted'>('all');
   const [pagination, setPagination] = useState({ 
     page: 1, 
     limit: 10, 
@@ -50,7 +52,14 @@ const EmailAutomationDetail: React.FC = () => {
     if (!silent) setIsLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/scraper/jobs/${jobId}/leads?page=${page}&limit=10`, {
+      let url = `${apiUrl}/api/scraper/jobs/${jobId}/leads?page=${page}&limit=10`;
+      
+      // Add filter parameter
+      if (filter !== 'all') {
+        url += `&filter=${filter}`;
+      }
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -83,7 +92,7 @@ const EmailAutomationDetail: React.FC = () => {
     if (token && jobId) {
       fetchLeads(1);
     }
-  }, [token, jobId]);
+  }, [token, jobId, filter]);
 
   // Handle polling when automation is in progress
   useEffect(() => {
@@ -232,6 +241,53 @@ const EmailAutomationDetail: React.FC = () => {
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden animate-in fade-in duration-500 flex flex-col">
+        {/* Filter Buttons */}
+        <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-gray-600 dark:text-gray-400 mr-2">Filter:</span>
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                filter === 'all'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              All Leads
+            </button>
+            <button
+              onClick={() => setFilter('no-email')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                filter === 'no-email'
+                  ? 'bg-red-600 text-white shadow-md'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              No Email Found
+            </button>
+            <button
+              onClick={() => setFilter('contacted')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                filter === 'contacted'
+                  ? 'bg-green-600 text-white shadow-md'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              Contacted
+            </button>
+            <button
+              onClick={() => setFilter('replied')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                filter === 'replied'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              Replied
+            </button>
+          </div>
+        </div>
+        
         <div className="overflow-x-auto w-full">
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
@@ -332,14 +388,23 @@ const EmailAutomationDetail: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-4 sm:px-6 py-4 align-top">
-                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${
-                           lead.status === 'NEW' ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800' :
-                           lead.status === 'CONTACTED' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
-                           'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
-                       }`}>
-                         {lead.status === 'CONTACTED' && <CheckCircle2 className="w-3 h-3 mr-1" />}
-                         {lead.status}
-                       </span>
+                       <div className="flex flex-col gap-1.5">
+                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${
+                             lead.receivedReply ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800' :
+                             lead.status === 'NEW' ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800' :
+                             lead.status === 'CONTACTED' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
+                             'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+                         }`}>
+                           {lead.receivedReply && <CheckCircle2 className="w-3 h-3 mr-1" />}
+                           {lead.status === 'CONTACTED' && !lead.receivedReply && <CheckCircle2 className="w-3 h-3 mr-1" />}
+                           {lead.receivedReply ? 'REPLIED' : lead.status}
+                         </span>
+                         {lead.receivedReply && (
+                           <span className="text-xs text-purple-600 dark:text-purple-400 font-medium flex items-center gap-1">
+                             <Mail className="w-3 h-3" /> Lead responded!
+                           </span>
+                         )}
+                       </div>
                     </td>
                     <td className="px-4 sm:px-6 py-4 align-top">
                         <div className="flex flex-col gap-2 relative">
