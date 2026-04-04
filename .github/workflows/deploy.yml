@@ -40,6 +40,9 @@ jobs:
             echo "OPENAI_KEY=${{ secrets.OPENAI_KEY }}" >> .env
             echo "Llama_KEY=${{ secrets.LLAMA_KEY }}" >> .env
             echo "Nvidia_super3=${{ secrets.NVIDIA_SUPER3 }}" >> .env
+            echo "REOON_API_KEY1=${{ secrets.REOON_API_KEY1 }}" >> .env
+            echo "REOON_API_KEY2=${{ secrets.REOON_API_KEY2 }}" >> .env
+            echo "REOON_API_KEY3=${{ secrets.REOON_API_KEY3 }}" >> .env
             echo "SERPSTACK_API_KEY1=${{ secrets.SERPSTACK_API_KEY1 }}" >> .env
             echo "SERPSTACK_API_KEY2=${{ secrets.SERPSTACK_API_KEY2 }}" >> .env
             echo "SERPSTACK_API_KEY3=${{ secrets.SERPSTACK_API_KEY3 }}" >> .env

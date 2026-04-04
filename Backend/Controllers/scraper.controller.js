@@ -238,17 +238,8 @@ const getJobs = async (req, res) => {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          leads: {
-            select: {
-              city: true,
-              state: true,
-              country: true,
-              status: true,
-              email: true,
-              emailExtracted: true,
-              receivedReply: true,
-              lastEmailedAt: true
-            }
+          _count: {
+            select: { leads: true }
           }
         }
       }),
@@ -303,14 +294,38 @@ const getJobs = async (req, res) => {
       monthlyOutreach[month]++;
     });
 
-    const formattedJobs = jobs.map(job => {
-      const firstLead = job.leads && job.leads.length > 0 ? job.leads[0] : {};
-      const totalLeads = job.leads.length;
-      const leadsWithEmail = job.leads.filter(l => l.email !== null && l.email !== '').length;
+    const formattedJobs = await Promise.all(jobs.map(async (job) => {
+      // Get exact counts for this job
+      const [
+        totalLeads, 
+        leadsWithEmail, 
+        extractedCount, 
+        outreachLeads, 
+        firstLead,
+        contactedToday,
+        contactedWeekly,
+        replyCount
+      ] = await Promise.all([
+        prisma.lead.count({ where: { scrapingJobId: job.id } }),
+        prisma.lead.count({ where: { scrapingJobId: job.id, email: { not: null, not: '' } } }),
+        prisma.lead.count({ where: { scrapingJobId: job.id, emailExtracted: true } }),
+        prisma.lead.count({ where: { scrapingJobId: job.id, status: { in: ['CONTACTED', 'FOLLOW_UP', 'REPLIED'] } } }),
+        prisma.lead.findFirst({ where: { scrapingJobId: job.id }, select: { city: true, state: true, country: true } }),
+        prisma.lead.count({ 
+          where: { 
+            scrapingJobId: job.id, 
+            lastEmailedAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) } 
+          } 
+        }),
+        prisma.lead.count({ 
+          where: { 
+            scrapingJobId: job.id, 
+            lastEmailedAt: { gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) } 
+          } 
+        }),
+        prisma.lead.count({ where: { scrapingJobId: job.id, receivedReply: true } })
+      ]);
 
-      const outreachLeads = job.leads.filter(l => ['CONTACTED', 'FOLLOW_UP', 'REPLIED'].includes(l.status)).length;
-
-      const extractedCount = job.leads.filter(l => l.emailExtracted).length;
       let enrichmentStatus = 'PENDING';
       if (totalLeads === 0) {
         enrichmentStatus = 'PENDING';
@@ -319,20 +334,6 @@ const getJobs = async (req, res) => {
       } else if (extractedCount > 0 || job.status === 'ENRICHING') {
         enrichmentStatus = 'PROCESSING';
       }
-
-      const contactedToday = job.leads.filter(l => {
-        if (!l.lastEmailedAt) return false;
-        const diff = (now.getTime() - new Date(l.lastEmailedAt).getTime()) / (1000 * 60 * 60);
-        return diff <= 24;
-      }).length;
-
-      const contactedWeekly = job.leads.filter(l => {
-        if (!l.lastEmailedAt) return false;
-        const diff = (now.getTime() - new Date(l.lastEmailedAt).getTime()) / (1000 * 60 * 60);
-        return diff <= 168;
-      }).length;
-
-      const replyCount = job.leads.filter(l => l.receivedReply).length;
 
       return {
         ...job,
@@ -347,11 +348,11 @@ const getJobs = async (req, res) => {
         enrichmentStatus,
         emailsExtracted: leadsWithEmail,
         leads: undefined, // Clear the leads array to keep the payload light
-        city: firstLead.city || 'N/A',
-        state: firstLead.state || 'N/A',
-        country: firstLead.country || 'N/A'
+        city: firstLead?.city || 'N/A',
+        state: firstLead?.state || 'N/A',
+        country: firstLead?.country || 'N/A'
       };
-    });
+    }));
 
     res.status(200).json({
       success: true,
@@ -396,6 +397,27 @@ const getLeadsWithoutWebsite = async (req, res) => {
   }
 };
 
+const deleteJob = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    // Use a transaction to ensure both leads and job are deleted
+    await prisma.$transaction([
+      prisma.lead.deleteMany({
+        where: { scrapingJobId: parseInt(jobId) }
+      }),
+      prisma.scrapingJob.delete({
+        where: { id: parseInt(jobId) }
+      })
+    ]);
+
+    res.status(200).json({ success: true, message: `Batch #${jobId} and all its leads have been deleted.` });
+  } catch (error) {
+    logger.error(`Error deleting job ${req.params.jobId}: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to delete batch data. It may not exist anymore.' });
+  }
+};
+
 module.exports = {
   verifyPuppeteer,
   triggerMapsScraper,
@@ -407,5 +429,6 @@ module.exports = {
   deleteTemplate,
   getLeadsByJobId,
   getJobs,
-  getLeadsWithoutWebsite
+  getLeadsWithoutWebsite,
+  deleteJob
 };

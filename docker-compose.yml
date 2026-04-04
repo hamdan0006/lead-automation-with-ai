@@ -38,16 +38,29 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/leadsdb?schema=public
       REDIS_URL: redis://redis:6379
       # Other variables should be provided in a .env file or environment
-      JWT_SECRET: ${JWT_SECRET:-change_me_to_something_strong}
+      # Internal App Variables (Injected from host .env)
+      JWT_SECRET: ${JWT_SECRET}
       App_Pass: ${App_Pass}
       SMTP_EMAIL: ${SMTP_EMAIL}
       NOTIFICATION_EMAIL: ${NOTIFICATION_EMAIL}
       OPENAI_KEY: ${OPENAI_KEY}
       Llama_KEY: ${Llama_KEY}
       Nvidia_super3: ${Nvidia_super3}
+      # Reoon API Keys
+      REOON_API_KEY1: ${REOON_API_KEY1}
+      REOON_API_KEY2: ${REOON_API_KEY2}
+      REOON_API_KEY3: ${REOON_API_KEY3}
+      # SerpStack API Keys (Full Set)
       SERPSTACK_API_KEY1: ${SERPSTACK_API_KEY1}
       SERPSTACK_API_KEY2: ${SERPSTACK_API_KEY2}
       SERPSTACK_API_KEY3: ${SERPSTACK_API_KEY3}
+      SERPSTACK_API_KEY4: ${SERPSTACK_API_KEY4}
+      SERPSTACK_API_KEY5: ${SERPSTACK_API_KEY5}
+      SERPSTACK_API_KEY6: ${SERPSTACK_API_KEY6}
+      SERPSTACK_API_KEY7: ${SERPSTACK_API_KEY7}
+      SERPSTACK_API_KEY8: ${SERPSTACK_API_KEY8}
+      SERPSTACK_API_KEY9: ${SERPSTACK_API_KEY9}
+      SERPSTACK_API_KEY10: ${SERPSTACK_API_KEY10}
       SERPSTACK_API_URL: ${SERPSTACK_API_URL:-https://api.serpstack.com/search}
 
 volumes:

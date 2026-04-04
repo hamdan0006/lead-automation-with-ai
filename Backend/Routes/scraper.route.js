@@ -11,7 +11,8 @@ const {
   deleteTemplate,
   getLeadsByJobId,
   getJobs,
-  getLeadsWithoutWebsite
+  getLeadsWithoutWebsite,
+  deleteJob
 } = require('../Controllers/scraper.controller');
 const { verifyToken } = require('../middlewares/auth.middleware');
 
@@ -41,6 +42,9 @@ router.get('/jobs/:jobId/leads', getLeadsByJobId);
 
 // GET /scraper/jobs
 router.get('/jobs', getJobs);
+
+// DELETE /scraper/jobs/:jobId
+router.delete('/jobs/:jobId', deleteJob);
 
 // GET /scraper/no-website
 router.get('/no-website', getLeadsWithoutWebsite);
