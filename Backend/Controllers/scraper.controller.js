@@ -200,7 +200,7 @@ const getLeadsByJobId = async (req, res) => {
       prisma.lead.count({
         where: {
           ...whereClause,
-          emailExtracted: true
+          email: { not: null, not: '' }
         }
       })
     ]);

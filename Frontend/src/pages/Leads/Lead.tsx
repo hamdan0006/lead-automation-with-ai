@@ -10,6 +10,7 @@ interface ScrapingJob {
     url: string;
     status: string;
     results: number;
+    leadsWithEmail: number;
     leadType: string | null;
     city: string;
     state: string;
@@ -257,6 +258,7 @@ const Leads: React.FC = () => {
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Target Region</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Keyword</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Leads</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Emails Found</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
                             </tr>
@@ -320,6 +322,20 @@ const Leads: React.FC = () => {
                                         <td className="px-6 py-4">
                                             <div className="text-sm text-gray-900 dark:text-white font-medium">{job.results}</div>
                                             <div className="text-xs text-gray-500">Extracted leads</div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`text-sm font-bold ${job.leadsWithEmail > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
+                                                    {job.leadsWithEmail}
+                                                </span>
+                                                <div className="w-16 bg-gray-100 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden hidden sm:block">
+                                                    <div 
+                                                        className="bg-green-500 h-1.5 rounded-full"
+                                                        style={{ width: `${Math.min((job.leadsWithEmail / (job.results || 1)) * 100, 100)}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="text-[10px] text-gray-500 uppercase font-bold tracking-tight mt-0.5">Valid Discovery</div>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-2">
