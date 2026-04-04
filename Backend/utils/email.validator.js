@@ -96,37 +96,46 @@ const validateEmail = async (email) => {
     const domain = email.split('@')[1].toLowerCase();
     const isFree = FREE_PROVIDERS.includes(domain);
 
-    // Step 1: DNS Check
+    // Step 1: DNS Check (Mandatory for ALL emails)
     const mxRecord = await checkDNS(email);
     const passesDNS = !!mxRecord;
     
-    // Step 2: SMTP Check
-    let passesSMTP = false;
-    if (passesDNS) {
-        passesSMTP = await checkSMTP(email, mxRecord);
-    }
-    
-    const passesBasicTests = passesDNS && passesSMTP;
-
-    if (!passesBasicTests) {
-        logger.debug(`❌ Email failed mandatory basic tests (DNS/SMTP): ${email}`);
+    if (!passesDNS) {
+        logger.debug(`❌ Email failed mandatory DNS check (No MX record): ${email}`);
         return false;
     }
 
+    // Step 2: Try SMTP Check
+    const passesSMTP = await checkSMTP(email, mxRecord);
+
     if (isFree) {
-        // Free providers MUST also pass 3rd Party
+        // Free providers (Gmail etc) ALWAYS need a 3rd party check regardless of SMTP result
         const passesThirdParty = await validateWithThirdParty(email);
         if (passesThirdParty) {
-            logger.debug(`✅ Free Email Validated (DNS+SMTP+3rdParty): ${email}`);
+            logger.debug(`✅ Free Email Validated (DNS + 3rdParty): ${email}`);
             return true;
         } else {
             logger.debug(`❌ Free email failed 3rd party test: ${email}`);
             return false;
         }
     } else {
-        // Company domains that passed DNS+SMTP are trusted
-        logger.debug(`✅ Company Email Validated (DNS+SMTP): ${email}`);
-        return true;
+        // Company domains
+        if (passesSMTP) {
+            // Excellent. Passed DNS and SMTP.
+            logger.debug(`✅ Company Email Validated (DNS + SMTP): ${email}`);
+            return true;
+        } else {
+            // SMTP failed, but DNS passed. Fallback to Reoon.
+            logger.debug(`⚠️ Company email failed SMTP test, falling back to 3rd party: ${email}`);
+            const passesThirdParty = await validateWithThirdParty(email);
+            if (passesThirdParty) {
+                logger.debug(`✅ Company Email Validated via fallback (3rdParty): ${email}`);
+                return true;
+            } else {
+                logger.debug(`❌ Company Email failed 3rd party fallback: ${email}`);
+                return false;
+            }
+        }
     }
 };
 
