@@ -49,28 +49,44 @@ const startEmailWorker = () => {
         let bestScore = -1; // -1: none, 0: possible, 1: highly likely, 2: excellent
 
         if (emailList.length > 0) {
-          // Step 3: 🧠 AI REASONING - Rank candidates by value (decision makers first)
-          logger.info(`🧠 AI Intelligence ranking ${emailList.length} candidates for "${name}"...`);
-          const rankedEmails = await rankEmailsWithAI(name, emailList).catch(() => emailList);
+          logger.info(`🔍 Validating ${emailList.length} candidate emails for "${name}"...`);
 
-          // Step 4: SMTP Validation on top ranked candidates
-          const bizDomain = websiteUrl ? websiteUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] : null;
+          const validEmails = [];
+          const failedEmails = [];
 
-          // We check up to top 5 candidates derived from AI ranking
-          for (const email of rankedEmails.slice(0, 5)) {
+          // Step 3: Run pipeline validation on all candidates
+          for (const email of emailList) {
             const isValidated = await validateEmail(email);
-            let score = 0;
             if (isValidated) {
-              score = 2; // Perfect Match (Verified Live)
-            } else if (bizDomain && email.includes(bizDomain)) {
-              score = 1; // High Likelihood (Domain Match)
+              validEmails.push(email);
+            } else {
+              failedEmails.push(email);
+            }
+          }
+
+          if (validEmails.length === 1) {
+            chosenEmail = validEmails[0];
+            bestScore = 2; // Verified
+          } else if (validEmails.length >= 2) {
+            // Step 4: 🧠 AI REASONING if we have 2 or more validated emails
+            logger.info(`🧠 AI Intelligence selecting from ${validEmails.length} verified candidates for "${name}"...`);
+            const rankedEmails = await rankEmailsWithAI(name, validEmails).catch(() => validEmails);
+            chosenEmail = rankedEmails[0] || validEmails[0];
+            bestScore = 2; // Verified
+          } else {
+            // 0 validated emails. Let's see if there is an info/domain email among failed.
+            // "if there is info which does not pass all 3 tests then we store it in our db"
+            const bizDomain = websiteUrl ? websiteUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] : null;
+
+            let fallbackEmail = null;
+            if (bizDomain) {
+              fallbackEmail = failedEmails.find(e => e.includes(bizDomain));
             }
 
-            if (score > bestScore) {
-              chosenEmail = email;
-              bestScore = score;
+            if (fallbackEmail) {
+              chosenEmail = fallbackEmail;
+              bestScore = 1; // Domain match, but unverified
             }
-            if (bestScore === 2) break; // Break early if we found a verified winner!
           }
         }
 

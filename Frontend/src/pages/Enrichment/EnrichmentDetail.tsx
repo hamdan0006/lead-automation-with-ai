@@ -36,13 +36,19 @@ const EnrichmentDetail: React.FC = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1 });
+  const [pagination, setPagination] = useState({ 
+    page: 1, 
+    limit: 50, 
+    total: 0, 
+    emailsExtracted: 0,
+    totalPages: 1 
+  });
 
   const fetchLeads = async (page = 1, silent = false) => {
     if (!silent) setIsLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/scraper/jobs/${jobId}/leads?page=${page}&limit=50`, {
+      const response = await fetch(`${apiUrl}/api/scraper/jobs/${jobId}/leads?page=${page}&limit=50`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -57,6 +63,7 @@ const EnrichmentDetail: React.FC = () => {
           page: data.pagination.page,
           limit: data.pagination.limit,
           total: data.pagination.total,
+          emailsExtracted: data.pagination.emailsExtracted || 0,
           totalPages: data.pagination.totalPages
         });
       }
@@ -92,25 +99,22 @@ const EnrichmentDetail: React.FC = () => {
     };
   }, [leads, pagination.page, token, jobId]);
 
-  // Compute stats based on the current visible leads
+  // Compute stats based on backend pagination total metadata
   const stats = useMemo(() => {
-    const total = leads.length;
-    if (total === 0) return { emailsFound: 0, mapsScraped: 0, progress: 0 };
-    const emailsFound = leads.filter(l => l.email || l.emailExtracted).length;
-    const mapsScraped = leads.filter(l => l.mapsScraped).length;
+    const total = pagination.total;
+    if (total === 0) return { emailsFound: 0, progress: 0 };
     return {
-      emailsFound,
-      mapsScraped,
-      progress: Math.round((emailsFound / total) * 100)
+      emailsFound: pagination.emailsExtracted,
+      progress: Math.round((pagination.emailsExtracted / total) * 100)
     };
-  }, [leads]);
+  }, [pagination]);
 
   const handleStartEnriching = async () => {
     if (!jobId) return;
     setIsEnriching(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/scraper/extract-emails`, {
+      const response = await fetch(`${apiUrl}/api/scraper/extract-emails`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -147,25 +151,42 @@ const EnrichmentDetail: React.FC = () => {
         </button>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-amber-500/10 dark:bg-amber-500/20 rounded-xl flex items-center justify-center border border-amber-500/20">
-              <Zap className="w-6 h-6 text-amber-500 dark:text-amber-400" />
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${stats.progress === 100 && leads.length > 0 ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/20' : 'bg-amber-500/10 dark:bg-amber-500/20 border-amber-500/20'}`}>
+              <Zap className={`w-6 h-6 ${stats.progress === 100 && leads.length > 0 ? 'text-green-600 dark:text-green-500' : 'text-amber-500 dark:text-amber-400'}`} />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Batch #{jobId} Enrichment</h1>
+              <div className="flex items-center gap-3 mb-1">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Batch #{jobId} Enrichment</h1>
+                {stats.progress === 100 && leads.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded text-xs font-bold bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/40 dark:border-green-800 dark:text-green-400">
+                    COMPLETED
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {pagination.total} leads pending enrichment
+                {stats.progress === 100 && leads.length > 0 ? `${pagination.total} leads actively enriched` : `${pagination.total} leads pending enrichment`}
               </p>
             </div>
           </div>
 
-          <button
-            onClick={handleStartEnriching}
-            disabled={isEnriching || leads.length === 0}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors shadow-sm w-full md:w-auto"
-          >
-            <Zap className="w-4 h-4" />
-            {isEnriching ? 'Triggering...' : 'Start Enriching'}
-          </button>
+          {stats.progress === 100 && leads.length > 0 ? (
+            <button
+              disabled
+              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gray-100 text-gray-500 font-medium rounded-lg border border-gray-200 cursor-not-allowed shadow-sm w-full md:w-auto dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Already Enriched
+            </button>
+          ) : (
+            <button
+              onClick={handleStartEnriching}
+              disabled={isEnriching || leads.length === 0}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors shadow-sm w-full md:w-auto"
+            >
+              <Zap className="w-4 h-4" />
+              {isEnriching ? 'Triggering...' : 'Start Enriching'}
+            </button>
+          )}
         </div>
 
         {/* Analytics & Progress Cards */}
@@ -174,12 +195,12 @@ const EnrichmentDetail: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between">
               <div className="flex items-center gap-2 mb-4">
                 <BarChart3 className="w-5 h-5 text-gray-400" />
-                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Enrichment Progress</h3>
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Total Enrichment Progress</h3>
               </div>
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-end">
                   <span className="text-3xl font-bold text-gray-900 dark:text-white">{stats.progress}%</span>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">{stats.emailsFound} / {leads.length} Enriched</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{stats.emailsFound} / {pagination.total} Enriched</span>
                 </div>
                 <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
                   <div className="bg-amber-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${stats.progress}%` }}></div>
@@ -194,7 +215,7 @@ const EnrichmentDetail: React.FC = () => {
               </div>
               <div>
                 <span className="text-3xl font-bold text-gray-900 dark:text-white">{stats.emailsFound}</span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">on current page</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">in this batch</span>
               </div>
             </div>
 
@@ -205,7 +226,7 @@ const EnrichmentDetail: React.FC = () => {
               </div>
               <div className="flex gap-4">
                 <div className="flex flex-col">
-                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{leads.length - stats.emailsFound}</span>
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.max(0, pagination.total - stats.emailsFound)}</span>
                   <span className="text-xs text-gray-500">Pending</span>
                 </div>
                 <div className="w-px bg-gray-200 dark:bg-gray-700"></div>

@@ -36,7 +36,7 @@ const Leads: React.FC = () => {
         setIsLoading(true);
         try {
             const apiUrl = import.meta.env.VITE_API_URL || '';
-            const response = await fetch(`${apiUrl}/scraper/jobs?page=${page}&limit=10`, {
+            const response = await fetch(`${apiUrl}/api/scraper/jobs?page=${page}&limit=10`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -77,7 +77,7 @@ const Leads: React.FC = () => {
         setIsSubmitting(true);
         try {
             const apiUrl = import.meta.env.VITE_API_URL || '';
-            const response = await fetch(`${apiUrl}/scraper/google-maps`, {
+            const response = await fetch(`${apiUrl}/api/scraper/google-maps`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

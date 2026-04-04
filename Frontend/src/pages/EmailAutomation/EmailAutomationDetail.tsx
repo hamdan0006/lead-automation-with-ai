@@ -36,13 +36,21 @@ const EmailAutomationDetail: React.FC = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAutomating, setIsAutomating] = useState(false);
-  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, queued: 0, totalPages: 1 });
+  const [pagination, setPagination] = useState({ 
+    page: 1, 
+    limit: 10, 
+    total: 0, 
+    queued: 0, 
+    contacted: 0,
+    emailsExtracted: 0,
+    totalPages: 1 
+  });
 
   const fetchLeads = async (page = 1, silent = false) => {
     if (!silent) setIsLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/scraper/jobs/${jobId}/leads?page=${page}&limit=10`, {
+      const response = await fetch(`${apiUrl}/api/scraper/jobs/${jobId}/leads?page=${page}&limit=10`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -58,6 +66,8 @@ const EmailAutomationDetail: React.FC = () => {
           limit: data.pagination.limit,
           total: data.pagination.total,
           queued: data.pagination.queued,
+          contacted: data.pagination.contacted || 0,
+          emailsExtracted: data.pagination.emailsExtracted || 0,
           totalPages: data.pagination.totalPages
         });
       }
@@ -93,7 +103,7 @@ const EmailAutomationDetail: React.FC = () => {
     setIsAutomating(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/scraper/send-emails`, {
+      const response = await fetch(`${apiUrl}/api/scraper/send-emails`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -116,18 +126,16 @@ const EmailAutomationDetail: React.FC = () => {
     }
   };
 
-  // Compute stats based on the current visible chunk for visual feedback
+  // Compute stats based on the global backend stats for accurate total tracking
   const stats = useMemo(() => {
-    const total = leads.length;
+    const total = pagination.total;
     if (total === 0) return { contacted: 0, emailsFound: 0, progress: 0 };
-    const contacted = leads.filter(l => l.contacted || l.status === 'CONTACTED').length;
-    const emailsFound = leads.filter(l => l.email || l.emailExtracted).length;
     return {
-      contacted,
-      emailsFound,
-      progress: Math.round((contacted / total) * 100)
+      contacted: pagination.contacted,
+      emailsFound: pagination.emailsExtracted,
+      progress: Math.round((pagination.contacted / total) * 100)
     };
-  }, [leads]);
+  }, [pagination]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= pagination.totalPages) {
@@ -178,12 +186,12 @@ const EmailAutomationDetail: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col justify-between">
               <div className="flex items-center gap-2 mb-4">
                 <BarChart3 className="w-5 h-5 text-gray-400" />
-                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Outreach Progress (This Page)</h3>
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Total Outreach Progress</h3>
               </div>
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-end">
                   <span className="text-3xl font-bold text-gray-900 dark:text-white">{stats.progress}%</span>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">{stats.contacted} / {leads.length} Contacted</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{stats.contacted} / {pagination.total} Contacted</span>
                 </div>
                 <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
                   <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${stats.progress}%` }}></div>
@@ -198,7 +206,7 @@ const EmailAutomationDetail: React.FC = () => {
               </div>
               <div>
                 <span className="text-3xl font-bold text-gray-900 dark:text-white">{stats.emailsFound}</span>
-                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">on current page</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">in this batch</span>
               </div>
             </div>
 
@@ -209,7 +217,7 @@ const EmailAutomationDetail: React.FC = () => {
               </div>
               <div className="flex gap-4">
                 <div className="flex flex-col">
-                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{leads.length - stats.contacted}</span>
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{pagination.total - stats.contacted}</span>
                   <span className="text-xs text-gray-500">Pending</span>
                 </div>
                 <div className="w-px bg-gray-200 dark:bg-gray-700"></div>

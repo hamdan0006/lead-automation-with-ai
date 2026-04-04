@@ -98,7 +98,7 @@ const Home = () => {
     setIsLoading(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/scraper/jobs?limit=200`, {
+      const response = await fetch(`${apiUrl}/api/scraper/jobs?limit=200`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 

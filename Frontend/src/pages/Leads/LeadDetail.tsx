@@ -42,6 +42,7 @@ const LeadDetail: React.FC = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterLeadType, setFilterLeadType] = useState('');
+  const [jobStatus, setJobStatus] = useState('PROCESSING');
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1 });
   const [jobStats, setJobStats] = useState<JobStats>({ totalLeads: 0, scrapedLeads: 0, emailsFound: 0 });
 
@@ -55,7 +56,7 @@ const LeadDetail: React.FC = () => {
       });
       if (leadType) queryParams.append('leadType', leadType);
 
-      const response = await fetch(`${apiUrl}/scraper/jobs/${jobId}/leads?${queryParams.toString()}`, {
+      const response = await fetch(`${apiUrl}/api/scraper/jobs/${jobId}/leads?${queryParams.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -72,6 +73,9 @@ const LeadDetail: React.FC = () => {
           total: data.pagination.total,
           totalPages: data.pagination.totalPages
         });
+        if (data.jobStatus) {
+            setJobStatus(data.jobStatus);
+        }
         // Update job stats if provided by API
         if (data.stats) {
           setJobStats({
@@ -178,9 +182,18 @@ const LeadDetail: React.FC = () => {
                 <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Scraping Progress</h3>
               </div>
               <div className="flex flex-col gap-2">
-                <span className="text-2xl font-bold text-gray-900 dark:text-white">Running</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {jobStatus === 'COMPLETED' ? 'Completed' : jobStatus === 'PROCESSING' ? 'Running' : jobStatus}
+                  </span>
+                  {jobStatus === 'COMPLETED' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
+                </div>
                 <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
-                  <div className="bg-brand-600 h-2.5 rounded-full transition-all duration-500 animate-pulse" style={{ width: '100%' }}></div>
+                  {jobStatus === 'COMPLETED' ? (
+                    <div className="bg-green-500 h-2.5 rounded-full transition-all duration-500" style={{ width: '100%' }}></div>
+                  ) : (
+                    <div className="bg-brand-600 h-2.5 rounded-full transition-all duration-500 animate-pulse" style={{ width: '100%' }}></div>
+                  )}
                 </div>
               </div>
             </div>

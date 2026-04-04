@@ -53,6 +53,13 @@ const triggerEmailExtraction = async (req, res) => {
       ? `Successfully enqueued ${enqueuedCount} leads from job #${jobId} for email extraction.`
       : `Successfully enqueued ${enqueuedCount} leads for email extraction.`;
 
+    if (jobId) {
+      await prisma.scrapingJob.update({
+        where: { id: parseInt(jobId) },
+        data: { status: 'ENRICHING' }
+      });
+    }
+
     res.status(202).json({
       success: true,
       message,
@@ -164,30 +171,49 @@ const getLeadsByJobId = async (req, res) => {
       whereClause.leadType = leadType;
     }
 
-    const [leads, totalCount, queuedCount] = await Promise.all([
+    const [job, leads, totalCount, queuedCount, contactedCount, emailsFoundCount] = await Promise.all([
+      prisma.scrapingJob.findUnique({
+        where: { id: parseInt(jobId) },
+        select: { status: true }
+      }),
       prisma.lead.findMany({
-        where: whereClause, // 👈 Apply base filter
+        where: whereClause, //  Apply base filter
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' }
       }),
       prisma.lead.count({
-        where: whereClause // 👈 Apply base filter
+        where: whereClause // Apply base filter
       }),
       prisma.lead.count({
         where: {
           ...whereClause,
           status: 'QUEUED'
         }
+      }),
+      prisma.lead.count({
+        where: {
+          ...whereClause,
+          status: { in: ['CONTACTED', 'FOLLOW_UP', 'REPLIED'] }
+        }
+      }),
+      prisma.lead.count({
+        where: {
+          ...whereClause,
+          emailExtracted: true
+        }
       })
     ]);
 
     res.status(200).json({
       success: true,
+      jobStatus: job ? job.status : 'UNKNOWN',
       data: leads,
       pagination: {
         total: totalCount,
         queued: queuedCount,
+        contacted: contactedCount,
+        emailsExtracted: emailsFoundCount,
         page,
         limit,
         totalPages: Math.ceil(totalCount / limit)
@@ -219,6 +245,7 @@ const getJobs = async (req, res) => {
               country: true,
               status: true,
               email: true,
+              emailExtracted: true,
               receivedReply: true,
               lastEmailedAt: true
             }
@@ -247,7 +274,7 @@ const getJobs = async (req, res) => {
     allRecentLeads.forEach(lead => {
       const emailDate = new Date(lead.lastEmailedAt);
       const diffMs = now.getTime() - emailDate.getTime();
-      
+
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
       if (diffHours >= 0 && diffHours < 24) {
         hourlyOutreach[23 - diffHours]++;
@@ -282,6 +309,17 @@ const getJobs = async (req, res) => {
       const leadsWithEmail = job.leads.filter(l => l.email !== null && l.email !== '').length;
 
       const outreachLeads = job.leads.filter(l => ['CONTACTED', 'FOLLOW_UP', 'REPLIED'].includes(l.status)).length;
+
+      const extractedCount = job.leads.filter(l => l.emailExtracted).length;
+      let enrichmentStatus = 'PENDING';
+      if (totalLeads === 0) {
+        enrichmentStatus = 'PENDING';
+      } else if (extractedCount >= totalLeads) {
+        enrichmentStatus = 'COMPLETED';
+      } else if (extractedCount > 0 || job.status === 'ENRICHING') {
+        enrichmentStatus = 'PROCESSING';
+      }
+
       const contactedToday = job.leads.filter(l => {
         if (!l.lastEmailedAt) return false;
         const diff = (now.getTime() - new Date(l.lastEmailedAt).getTime()) / (1000 * 60 * 60);
@@ -306,6 +344,8 @@ const getJobs = async (req, res) => {
         replyCount,
         replyRate: totalLeads > 0 ? Math.round((replyCount / totalLeads) * 100) : 0,
         isAutomationComplete: totalLeads > 0 && outreachLeads >= totalLeads,
+        enrichmentStatus,
+        emailsExtracted: leadsWithEmail,
         leads: undefined, // Clear the leads array to keep the payload light
         city: firstLead.city || 'N/A',
         state: firstLead.state || 'N/A',

@@ -31,7 +31,7 @@ const Enrichment: React.FC = () => {
         setIsLoading(true);
         try {
             const apiUrl = import.meta.env.VITE_API_URL || '';
-            const response = await fetch(`${apiUrl}/scraper/jobs?page=${page}&limit=10`, {
+            const response = await fetch(`${apiUrl}/api/scraper/jobs?page=${page}&limit=10`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -205,20 +205,25 @@ const Enrichment: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-2">
-                                                <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold border w-fit ${
-                                                    job.enrichmentStatus === 'COMPLETED' || (job.emailsExtracted && job.emailsExtracted > 0) ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
-                                                    job.enrichmentStatus === 'PROCESSING' || job.enrichmentStatus === 'PENDING' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' :
+                                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border w-fit ${
+                                                    job.enrichmentStatus === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
+                                                    job.enrichmentStatus === 'PROCESSING' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' :
                                                     'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400 dark:border-gray-700'
                                                 }`}>
-                                                    {job.enrichmentStatus === 'PROCESSING' ? 'Enriching' : 
-                                                     job.enrichmentStatus === 'PENDING' ? 'Pending' :
-                                                     job.enrichmentStatus === 'COMPLETED' ? 'Completed' : 'Not Started'}
+                                                    <div className={`w-1.5 h-1.5 rounded-full ${
+                                                        job.enrichmentStatus === 'COMPLETED' ? 'bg-green-500' :
+                                                        job.enrichmentStatus === 'PROCESSING' ? 'bg-amber-500 animate-pulse' :
+                                                        'bg-gray-400'
+                                                    }`} />
+                                                    {job.enrichmentStatus === 'COMPLETED' ? 'Enriched' : 
+                                                     job.enrichmentStatus === 'PROCESSING' ? 'Enriching...' : 'Not Enriched'}
                                                 </span>
-                                                {(job.enrichmentStatus === 'PROCESSING' || job.enrichmentStatus === 'PENDING') && (
+                                                
+                                                {job.enrichmentStatus === 'PROCESSING' && (
                                                     <div className="w-full">
                                                         <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
-                                                            <span className="font-medium">Extracting Emails</span>
-                                                            <span className="font-bold">Running...</span>
+                                                            <span className="font-medium">Finding Emails</span>
+                                                            <span className="font-bold">In Progress</span>
                                                         </div>
                                                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
                                                             <div 
@@ -231,13 +236,31 @@ const Enrichment: React.FC = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <button 
-                                                onClick={() => navigate(`/start-enrichment/${job.id}`)}
-                                                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 rounded-xl border border-amber-200 dark:border-amber-800 shadow-sm transition-all whitespace-nowrap"
-                                            >
-                                                <Zap className="w-4 h-4" /> 
-                                                {job.enrichmentStatus === 'COMPLETED' ? 'View Results' : 'Start Enriching'}
-                                            </button>
+                                            {job.enrichmentStatus === 'COMPLETED' ? (
+                                                <button 
+                                                    onClick={() => navigate(`/start-enrichment/${job.id}`)}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-green-600 bg-green-50 rounded-xl border border-green-200 hover:bg-green-100 transition-all whitespace-nowrap dark:bg-green-900/20 dark:text-green-400 dark:border-green-800"
+                                                >
+                                                    <Zap className="w-4 h-4" /> 
+                                                    View Enriched
+                                                </button>
+                                            ) : job.enrichmentStatus === 'PROCESSING' ? (
+                                                <button 
+                                                    onClick={() => navigate(`/start-enrichment/${job.id}`)}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-amber-500 bg-amber-50 rounded-xl border border-amber-200 hover:bg-amber-100 transition-all whitespace-nowrap dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800"
+                                                >
+                                                    <RefreshCw className="w-4 h-4 animate-spin" /> 
+                                                    Monitor Progress
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => navigate(`/start-enrichment/${job.id}`)}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 rounded-xl border border-amber-200 dark:border-amber-800 shadow-sm transition-all whitespace-nowrap"
+                                                >
+                                                    <Zap className="w-4 h-4" /> 
+                                                    Start Enriching
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))

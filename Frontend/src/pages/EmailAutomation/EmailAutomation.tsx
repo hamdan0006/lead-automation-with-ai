@@ -9,6 +9,7 @@ interface ScrapingJob {
   url: string;
   status: string;
   results: number;
+  leadsWithEmail: number;
   leadType: string | null;
   city: string;
   state: string;
@@ -31,7 +32,7 @@ const EmailAutomation: React.FC = () => {
         setIsLoading(true);
         try {
             const apiUrl = import.meta.env.VITE_API_URL || '';
-            const response = await fetch(`${apiUrl}/scraper/jobs?page=${page}&limit=10`, {
+            const response = await fetch(`${apiUrl}/api/scraper/jobs?page=${page}&limit=10`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -139,6 +140,7 @@ const EmailAutomation: React.FC = () => {
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Target Region</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Keyword</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Leads</th>
+                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Emails Found</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Automation Status</th>
                                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
                             </tr>
@@ -146,7 +148,7 @@ const EmailAutomation: React.FC = () => {
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">
+                                    <td colSpan={8} className="px-6 py-8 text-center text-sm text-gray-500">
                                         <div className="flex justify-center items-center gap-2">
                                             <RefreshCw className="w-4 h-4 animate-spin" /> Loading batches...
                                         </div>
@@ -154,7 +156,7 @@ const EmailAutomation: React.FC = () => {
                                 </tr>
                             ) : filteredJobs.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500">
+                                    <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500">
                                         <div className="flex flex-col items-center gap-3">
                                             <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
                                                 <Send className="w-6 h-6 text-gray-400" />
@@ -203,6 +205,11 @@ const EmailAutomation: React.FC = () => {
                                             <div className="text-sm text-gray-900 dark:text-white font-medium">{job.results}</div>
                                             <div className="text-xs text-gray-500">Scraped leads</div>
                                         </td>
+                                        <td className="px-6 py-4">
+                                            <div className="text-sm text-gray-900 dark:text-white font-medium">{job.leadsWithEmail ?? 0}</div>
+                                            <div className="text-xs text-gray-500">Emails found</div>
+                                        </td>
+
                                          <td className="px-6 py-4">
                                             {job.isAutomationComplete || job.contactedCount > 0 ? (
                                                 <div className="flex flex-col gap-1">
