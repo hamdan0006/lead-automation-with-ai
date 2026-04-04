@@ -339,29 +339,16 @@ const Leads: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-2">
-                                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium w-fit ${job.status === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                                                        job.status === 'PROCESSING' || job.status === 'PENDING' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                                                            'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                                    }`}>
-                                                    {job.status === 'PROCESSING' || job.status === 'PENDING' ? (
-                                                        <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                                                    ) : null}
+                                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold w-fit ${
+                                                    job.status === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200' :
+                                                    job.status === 'SCRAPING' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200' :
+                                                    'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400 border border-gray-200'
+                                                }`}>
+                                                    {job.status === 'SCRAPING' && (
+                                                         <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                                                    )}
                                                     {job.status}
                                                 </span>
-                                                {(job.status === 'PROCESSING' || job.status === 'PENDING') && job.results > 0 && (
-                                                    <div className="w-full">
-                                                        <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
-                                                            <span className="font-medium">Scraping Progress</span>
-                                                            <span className="font-bold">Running...</span>
-                                                        </div>
-                                                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                                                            <div
-                                                                className="bg-amber-500 h-1.5 rounded-full transition-all duration-300 animate-pulse"
-                                                                style={{ width: '100%' }}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
