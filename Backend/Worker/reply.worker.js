@@ -43,11 +43,30 @@ const checkReplies = async () => {
                 const all = item.parts.find((part) => part.which === '');
                 const id = item.attributes.uid;
                 const header = item.parts.find((part) => part.which === 'HEADER');
-                const senderEmail = header.body.from[0].match(/<([^>]+)>/)?.[1] || header.body.from[0];
+                
+                // Extract email from various formats
+                const fromRaw = header.body.from[0];
+                let senderEmail = null;
+                
+                // Try to extract email from "Name <email@domain.com>" format
+                const emailMatch = fromRaw.match(/<([^>]+)>/);
+                if (emailMatch) {
+                    senderEmail = emailMatch[1].toLowerCase().trim();
+                } else {
+                    // If no angle brackets, assume the whole string is the email
+                    senderEmail = fromRaw.toLowerCase().trim();
+                }
 
-                // 🤫 SILENT CHECK: NO LOGGING IF NOT FOUND
-                const lead = await prisma.lead.findUnique({
-                    where: { email: senderEmail }
+                logger.info(`📧 Checking email: ${senderEmail}`);
+
+                // Check database with case-insensitive search
+                const lead = await prisma.lead.findFirst({
+                    where: {
+                        email: {
+                            equals: senderEmail,
+                            mode: 'insensitive'
+                        }
+                    }
                 });
 
                 if (lead) {
@@ -75,11 +94,14 @@ const checkReplies = async () => {
 
                     // Now mark as seen in Gmail so we don't process it again
                     await connection.addFlags(id, '\\Seen');
+                } else {
+                    logger.info(`   ❌ Not a lead: ${senderEmail}`);
                 }
-                // If lead is null, we stay silent and do nothing.
             }
             if (repliesFound === 0) {
                 logger.info('✅ No lead replies found in unread messages');
+            } else {
+                logger.info(`🎉 Found ${repliesFound} lead replies!`);
             }
         } else {
             logger.info('✅ No unread messages');
