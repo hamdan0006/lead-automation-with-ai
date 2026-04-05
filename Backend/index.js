@@ -11,6 +11,7 @@ require('./config/redis'); // Triggers connection to Redis immediately
 const healthRoutes = require('./Routes/health.route');
 const scraperRoutes = require('./Routes/scraper.route');
 const authRoutes = require('./Routes/auth.route');
+const syncRoutes = require('./Routes/sync.route');
 
 // Import Workers
 const { startEmailWorker } = require('./Worker/email.worker');
@@ -43,6 +44,7 @@ app.use((req, res, next) => {
 app.use('/api/health', healthRoutes);
 app.use('/api/scraper', scraperRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/sync', syncRoutes);
 
 // Fallback Route
 app.get('/', (req, res) => {

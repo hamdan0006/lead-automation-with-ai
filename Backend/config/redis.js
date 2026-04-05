@@ -5,6 +5,8 @@ require('dotenv').config();
 const redisOptions = {
   maxRetriesPerRequest: null, // REQUIRED by BullMQ
   enableReadyCheck: false,
+  connectTimeout: 30000, // 30 seconds
+  keepAlive: 30000,
   
   // 🟢 Exponential Backoff Reconnection Strategy
   retryStrategy(times) {
