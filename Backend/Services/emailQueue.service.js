@@ -22,6 +22,7 @@ const addEmailExtractionJob = async (leadId, websiteUrl, name) => {
       `extract-email-lead-${leadId}`,
       { leadId, websiteUrl, name },
       {
+        jobId: `lead-${leadId}`,  // Prevents duplicate jobs for same lead
         priority: 1,
         removeOnComplete: true,
         removeOnFail: 100,

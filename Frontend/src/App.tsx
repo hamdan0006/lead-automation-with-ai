@@ -26,17 +26,14 @@ import Enrichment from './pages/Enrichment/Enrichment';
 import EnrichmentDetail from './pages/Enrichment/EnrichmentDetail';
 import EmailAutomation from './pages/EmailAutomation/EmailAutomation';
 import EmailAutomationDetail from './pages/EmailAutomation/EmailAutomationDetail';
-// Since I can't verify all, I will comment out ones I'm unsure of or map them to existing pages if possible. 
-// However, the user explicitly asked for these routes. I will include them and if they fail, the user will see.
-// But valid paths are critical.
-// I will assume standard structure /pages/PageName
+
 
 
 function App() {
   const { isAuthenticated, checkAuth } = useAuthStore();
 
   useEffect(() => {
-    // Check authentication status on app load
+    // Checking authentication status on app load
     checkAuth();
   }, []);
 

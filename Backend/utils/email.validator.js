@@ -110,26 +110,35 @@ const validateEmail = async (email) => {
 
     if (isFree) {
         // Free providers (Gmail etc) ALWAYS need a 3rd party check regardless of SMTP result
-        const passesThirdParty = await validateWithThirdParty(email);
-        if (passesThirdParty) {
-            logger.debug(`✅ Free Email Validated (DNS + 3rdParty): ${email}`);
+        const thirdPartyResult = await validateWithThirdParty(email, passesDNS, false);
+        if (thirdPartyResult.success) {
+            const method = thirdPartyResult.fallback ? 'DNS only (Reoon fallback)' : 'DNS + Reoon';
+            logger.debug(`✅ Free Email Validated (${method}): ${email}`);
             return true;
         } else {
-            logger.debug(`❌ Free email failed 3rd party test: ${email}`);
+            logger.debug(`❌ Free email failed validation: ${email}`);
             return false;
         }
     } else {
         // Company domains
         if (passesSMTP) {
             // Excellent. Passed DNS and SMTP.
-            logger.debug(`✅ Company Email Validated (DNS + SMTP): ${email}`);
-            return true;
+            const thirdPartyResult = await validateWithThirdParty(email, passesDNS, passesSMTP);
+            if (thirdPartyResult.success) {
+                const method = thirdPartyResult.fallback ? 'DNS + SMTP (Reoon fallback)' : 'DNS + SMTP + Reoon';
+                logger.debug(`✅ Company Email Validated (${method}): ${email}`);
+                return true;
+            } else {
+                logger.debug(`❌ Company email failed Reoon validation: ${email}`);
+                return false;
+            }
         } else {
             // SMTP failed, but DNS passed. Fallback to Reoon.
             logger.debug(`⚠️ Company email failed SMTP test, falling back to 3rd party: ${email}`);
-            const passesThirdParty = await validateWithThirdParty(email);
-            if (passesThirdParty) {
-                logger.debug(`✅ Company Email Validated via fallback (3rdParty): ${email}`);
+            const thirdPartyResult = await validateWithThirdParty(email, passesDNS, passesSMTP);
+            if (thirdPartyResult.success) {
+                const method = thirdPartyResult.fallback ? 'DNS only (SMTP failed, Reoon fallback)' : 'DNS + Reoon (SMTP failed)';
+                logger.debug(`✅ Company Email Validated via fallback (${method}): ${email}`);
                 return true;
             } else {
                 logger.debug(`❌ Company Email failed 3rd party fallback: ${email}`);

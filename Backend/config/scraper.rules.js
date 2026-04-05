@@ -5,6 +5,12 @@ const rules = {
     max: 120
   },
   
+  // Target for high-volume scraping (300+ leads)
+  highVolumeTarget: {
+    min: 300,
+    max: 350
+  },
+  
   // Scroller rules
   scroll: {
     // How many pixels to scroll per step (randomized to prevent bot signals)
@@ -36,6 +42,26 @@ const rules = {
   batchGap: {
     min: 120000, // 2 minutes
     max: 240000  // 4 minutes
+  },
+  
+  // Captcha detection
+  captcha: {
+    checkInterval: 5, // Check every 5 scrolls
+    selectors: [
+      'iframe[src*="recaptcha"]',
+      'iframe[src*="captcha"]',
+      '#captcha',
+      '.g-recaptcha'
+    ]
+  },
+  
+  // Rate limit detection
+  rateLimit: {
+    slowResponseThreshold: 10000, // 10s response time
+    adaptiveDelay: {
+      min: 5000,
+      max: 10000
+    }
   }
 };
 

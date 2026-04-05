@@ -56,11 +56,16 @@ const startEmailWorker = () => {
 
           // Step 3: Run pipeline validation on all candidates
           for (const email of emailList) {
-            const isValidated = await validateEmail(email);
-            if (isValidated) {
-              validEmails.push(email);
-            } else {
-              failedEmails.push(email);
+            try {
+              const isValidated = await validateEmail(email);
+              if (isValidated) {
+                validEmails.push(email);
+              } else {
+                failedEmails.push(email);
+              }
+            } catch (validationError) {
+              logger.warn(`⚠️ Validation error for ${email}: ${validationError.message}`);
+              failedEmails.push(email); // Treat as failed, continue with others
             }
           }
 

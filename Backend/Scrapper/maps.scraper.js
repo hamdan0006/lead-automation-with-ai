@@ -32,8 +32,11 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
     const targetNewLeads = getRandomInt(50, 60);
     let newLeadsFound = 0;
     let totalScrolled = 0;
-    // 🛑 DYNAMIC SAFETY STOP: Randomize depth between 10-15 cycles
-    const MAX_SCROLL_CYCLES = getRandomInt(10, 15);
+    // 🛑 DYNAMIC SAFETY STOP: Randomize depth between 18-22 cycles for 300+ leads
+    const MAX_SCROLL_CYCLES = getRandomInt(18, 22);
+    let captchaDetected = false;
+    let slowResponseCount = 0;
+    let lastScrollTime = Date.now();
 
     logger.info(`🎯 Goal: Find ${targetNewLeads} NEW leads. (Safety Stop: ${MAX_SCROLL_CYCLES} cycles)`);
 
@@ -66,9 +69,35 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
     const processedLinks = new Set(); // Keep track of links we've visited in THIS run
 
     // --- MAIN HYBRID LOOP ---
-    while (newLeadsFound < targetNewLeads && totalScrolled < MAX_SCROLL_CYCLES) {
+    while (newLeadsFound < targetNewLeads && totalScrolled < MAX_SCROLL_CYCLES && !captchaDetected) {
       totalScrolled++;
       logger.info(`📜 Scroll Cycle ${totalScrolled}/${MAX_SCROLL_CYCLES} | Progress: ${newLeadsFound}/${targetNewLeads} new leads`);
+
+      // 🤖 CAPTCHA DETECTION: Check every 5 scrolls
+      if (totalScrolled % 5 === 0) {
+        try {
+          const hasCaptcha = await page.evaluate(() => {
+            const captchaSelectors = [
+              'iframe[src*="recaptcha"]',
+              'iframe[src*="captcha"]',
+              '#captcha',
+              '.g-recaptcha',
+              'div[id*="captcha"]'
+            ];
+            return captchaSelectors.some(selector => document.querySelector(selector) !== null);
+          });
+          
+          if (hasCaptcha) {
+            logger.error('🤖 CAPTCHA DETECTED! Stopping scraper gracefully...');
+            captchaDetected = true;
+            break;
+          }
+        } catch (e) {
+          logger.warn('Captcha check failed, continuing...');
+        }
+      }
+
+      const scrollStartTime = Date.now();
 
       // 1. Scroll down to load more results
       for (let i = 0; i < 8; i++) {
@@ -84,6 +113,21 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
       const visibleLinks = await page.evaluate(() => {
         return Array.from(document.querySelectorAll('a.hfpxzc')).map(a => a.href);
       });
+
+      // 🐌 RATE LIMIT DETECTION: Check response time
+      const scrollDuration = Date.now() - scrollStartTime;
+      if (scrollDuration > 10000) { // 10s threshold
+        slowResponseCount++;
+        logger.warn(`⚠️ Slow response detected (${scrollDuration}ms). Count: ${slowResponseCount}`);
+        
+        if (slowResponseCount >= 3) {
+          logger.warn('🐌 Possible rate limiting. Adding adaptive delay...');
+          await sleep(getRandomInt(5000, 10000));
+          slowResponseCount = 0; // Reset counter
+        }
+      } else {
+        slowResponseCount = Math.max(0, slowResponseCount - 1); // Decay counter
+      }
 
       // 3. Filter for links we haven't checked in this run yet
       const linksToProcess = visibleLinks.filter(link => !processedLinks.has(link));
@@ -187,6 +231,21 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
       const wavePause = getRandomInt(3000, 6000);
       logger.info(`⏳ Wave completed. Pause: ${wavePause / 1000}s...`);
       await sleep(wavePause);
+    }
+
+    // Handle captcha detection
+    if (captchaDetected) {
+      logger.error(`⚠️ Scraping stopped due to CAPTCHA after ${newLeadsFound} leads`);
+      if (scrapingJobId) {
+        await prisma.scrapingJob.update({
+          where: { id: parseInt(scrapingJobId) },
+          data: { 
+            status: 'FAILED',
+            error: 'CAPTCHA detected - manual intervention required'
+          }
+        });
+      }
+      throw new Error('CAPTCHA_DETECTED');
     }
 
     // Wrap up job
