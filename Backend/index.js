@@ -100,6 +100,19 @@ const startServer = async () => {
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 };
 
+// Crash protection - prevent unhandled errors from killing server
+process.on('uncaughtException', (error) => {
+  logger.error(`🚨 UNCAUGHT EXCEPTION: ${error.message}`);
+  logger.error(error.stack);
+  // Don't exit - keep server running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error(`🚨 UNHANDLED REJECTION at ${promise}`);
+  logger.error(`Reason: ${reason}`);
+  // Don't exit - keep server running
+});
+
 startServer();
 
 
