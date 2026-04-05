@@ -33,6 +33,14 @@ services:
     ports:
       - "3000:3000"
     command: sh -c "npx prisma migrate deploy && node index.js"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+    shm_size: '256m'
     environment:
       # Inject DATABASE_URL and REDIS_URL dynamically
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/leadsdb?schema=public

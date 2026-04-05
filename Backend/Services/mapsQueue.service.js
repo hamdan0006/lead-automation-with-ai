@@ -21,6 +21,7 @@ const addMapsScrapingJob = async (query, jobId, leadType) => {
       `maps-scrape-${jobId}`,
       { query, jobId, leadType },
       {
+        jobId: `scraper-${jobId}`, // Prevents duplicate jobs
         priority: 1,
         removeOnComplete: true, 
         removeOnFail: 100 
