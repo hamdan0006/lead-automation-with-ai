@@ -55,9 +55,17 @@ jobs:
             echo "SERPSTACK_API_KEY10=${{ secrets.SERPSTACK_API_KEY10 }}" >> .env
             echo "SERPSTACK_API_URL=${{ secrets.SERPSTACK_API_URL }}" >> .env
 
-            # Restart services
+            # Restart services (only rebuild if Dockerfile or package.json changed)
             docker-compose down --remove-orphans
-            DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose up -d --build
+            
+            # Check if rebuild is needed
+            if git diff HEAD@{1} --name-only | grep -qE 'Dockerfile|package.json|package-lock.json'; then
+              echo "📦 Dependencies changed, rebuilding..."
+              DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker-compose up -d --build
+            else
+              echo "♻️ No dependency changes, restarting without rebuild..."
+              docker-compose up -d
+            fi
 
             # Run Prisma Migrations
             docker-compose exec -T backend npx prisma migrate deploy

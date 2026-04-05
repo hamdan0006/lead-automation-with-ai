@@ -55,7 +55,7 @@
  * Lead: "Acme Restaurant"
  * Website: https://acmerestaurant.com
  * Email found: owner@acmerestaurant.com
- * Channel: Company Email ✅
+ * Channel: Company Email 
  */
 
 // ============================================================================
