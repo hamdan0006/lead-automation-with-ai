@@ -87,12 +87,49 @@ const polishBody = (body) => {
     return body.trim();
 };
 
-const getNicheTerminology = (lead) => {
-    const niche = lead.niche ? lead.niche.toLowerCase() : '';
-    if (niche.includes('dent')) return 'patients';
-    if (niche.includes('law') || niche.includes('legal') || niche.includes('attorney')) return 'clients';
-    if (niche.includes('medical') || niche.includes('doctor') || niche.includes('clinic')) return 'patients';
-    return 'customers';
+const getNicheTerminology = async (lead) => {
+    // If we have clear indicators, use them for speed
+    const name = lead.name ? lead.name.toLowerCase() : '';
+    const leadType = lead.leadType ? lead.leadType.toLowerCase() : '';
+    const combined = `${name} ${leadType}`;
+    
+    // Quick hardcoded fallbacks for obvious cases
+    if (combined.includes('dent')) return 'patients';
+    if (combined.includes('law') || combined.includes('legal') || combined.includes('attorney')) return 'clients';
+    if (combined.includes('medical') || combined.includes('doctor') || combined.includes('clinic')) return 'patients';
+    
+    // Otherwise, let AI decide based on business context
+    if (!clientPrimary) return 'customers'; // Fallback if AI unavailable
+    
+    try {
+        const prompt = `### TASK
+Based on this business information, determine if they serve "customers", "clients", or "patients".
+
+### BUSINESS INFO
+Name: ${lead.name || 'Unknown'}
+Type: ${lead.leadType || 'Unknown'}
+Website: ${lead.website || 'N/A'}
+
+### RULES
+- Use "patients" for healthcare/dental/medical businesses
+- Use "clients" for professional services (law, consulting, accounting, real estate, agencies)
+- Use "customers" for retail, restaurants, e-commerce, general services
+
+### OUTPUT
+Return ONLY valid JSON: { "term": "customers" } or { "term": "clients" } or { "term": "patients" }`;
+
+        const response = await callAICompletion(prompt, 'meta-llama/llama-3.3-70b-instruct');
+        const result = parseAIResponse(response);
+        
+        const term = result.term?.toLowerCase();
+        if (term === 'patients' || term === 'clients' || term === 'customers') {
+            return term;
+        }
+        return 'customers'; // Safe fallback
+    } catch (error) {
+        logger.warn(`⚠️ AI terminology detection failed: ${error.message}. Using 'customers'.`);
+        return 'customers';
+    }
 };
 
 const getTemplate = (scenario, businessName, city, loadTime, customerTerm = 'customers') => {
@@ -263,7 +300,7 @@ const generateOutreachBody = async (lead) => {
     const businessName = cleanName(lead.name);
     const { city, loadTime } = lead;
     const scenario = detectScenario(lead);
-    const customerTerm = getNicheTerminology(lead);
+    const customerTerm = await getNicheTerminology(lead); // Now async
     const template = getTemplate(scenario, businessName, city, loadTime, customerTerm);
 
     logger.info(`📧 Generating email for "${businessName}" | Scenario: ${scenario}`);
@@ -306,6 +343,143 @@ Return ONLY valid JSON: { "subject": "...", "body": "..." }`;
     }
 };
 
+const generateSecondFollowUpBody = async (lead) => {
+    if (!clientPrimary) throw new Error('AI API keys missing. Cannot generate AI email.');
+
+    const businessName = cleanName(lead.name);
+    const { city } = lead;
+    const scenario = detectScenario(lead);
+    const loc = city || 'your area';
+    const customerTerm = await getNicheTerminology(lead); // Now async
+
+    const secondFollowUpTemplates = {
+        AUTOMATION: {
+            subject: `${businessName} — last check-in`,
+            body: `Hi,
+
+Last note on this. If automation isn't a priority right now, no worries. Just wanted to check in one final time.
+
+Reply if you want to talk.`
+        },
+        BAD_SEO: {
+            subject: `${businessName} — final note on SEO`,
+            body: `Hi,
+
+Last note. Your competitors in ${loc} are ranking because their SEO is set up right. This is fixable.
+
+Reply if you want yours fixed.`
+        },
+        WEBSITE_DOWN: {
+            subject: `${businessName} — site status`,
+            body: `Hi,
+
+Final check. If your site's still down, ${customerTerm} are going elsewhere. I can help get it back up.
+
+Reply if you need help.`
+        },
+        SEO_AND_SPEED: {
+            subject: `${businessName} — last note`,
+            body: `Hi,
+
+Final note on speed and SEO. Both are fixable fast and the impact is immediate once done.
+
+Reply if you're interested.`
+        },
+        INSECURE: {
+            subject: `${businessName} — security warning`,
+            body: `Hi,
+
+Last note. That warning is still turning visitors away before they see what you offer.
+
+Reply if you want it fixed.`
+        },
+        INSECURE_ALL: {
+            subject: `${businessName} — final note`,
+            body: `Hi,
+
+Last check-in. Security, speed, and SEO are all fixable. Each one is costing you business right now.
+
+Reply if you're ready.`
+        },
+        INSECURE_SEO: {
+            subject: `${businessName} — last note`,
+            body: `Hi,
+
+Final note. Security and SEO are both holding you back from ranking and getting traffic.
+
+Reply if you want them fixed.`
+        },
+        INSECURE_SLOW: {
+            subject: `${businessName} — final check`,
+            body: `Hi,
+
+Last note. Warning and speed are both costing you ${customerTerm}. Both are quick fixes.
+
+Reply if you're interested.`
+        },
+        SLOW_LOAD: {
+            subject: `${businessName} — site speed`,
+            body: `Hi,
+
+Final note on speed. It's fixable in days, not weeks, and visitors will notice immediately.
+
+Reply if you want it done.`
+        },
+        NO_WEBSITE: {
+            subject: `${businessName} — online presence`,
+            body: `Hi,
+
+Last note. ${loc} ${customerTerm} are searching online and finding competitors. You're missing out daily.
+
+Reply if you're ready for a site.`
+        },
+        MOBILE: {
+            subject: `${businessName} — mobile site`,
+            body: `Hi,
+
+Final note. 60% of your traffic is on mobile and it's broken. That's a lot of lost business.
+
+Reply if you want it working.`
+        }
+    };
+
+    const secondFollowUp = secondFollowUpTemplates[scenario] || secondFollowUpTemplates['AUTOMATION'];
+
+    const prompt = `### TASK
+You are Hamdan Ahmad. This is the FINAL follow-up. Rephrase to be respectful and give them an easy out.
+
+### RULES
+1. SUBJECT ALWAYS STARTS WITH THE BUSINESS NAME.
+2. Keep the "Hi," greeting on its OWN LINE with a line break AFTER it.
+3. Keep 40-50 words total — brief and respectful.
+4. Acknowledge this is the last message.
+5. NO pressure, NO "AI" fluff words.
+6. End with "Reply if you want [action]."
+
+### TEMPLATE
+Subject: ${secondFollowUp.subject}
+
+Body:
+${secondFollowUp.body}
+
+### OUTPUT
+Return ONLY valid JSON: { "subject": "...", "body": "..." }`;
+
+    try {
+        const textContent = await callAICompletion(prompt);
+        const result = parseAIResponse(textContent);
+        return {
+            subject: result.subject || secondFollowUp.subject,
+            body: polishBody(result.body || secondFollowUp.body)
+        };
+    } catch (error) {
+        return {
+            subject: secondFollowUp.subject,
+            body: polishBody(secondFollowUp.body)
+        };
+    }
+};
+
 const generateFollowUpBody = async (lead) => {
     if (!clientPrimary) throw new Error('AI API keys missing. Cannot generate AI email.');
 
@@ -314,7 +488,7 @@ const generateFollowUpBody = async (lead) => {
     const scenario = detectScenario(lead);
     const loc = city || 'your area';
     const load = loadTime ? `${loadTime}s` : 'several seconds';
-    const customerTerm = getNicheTerminology(lead);
+    const customerTerm = await getNicheTerminology(lead); // Now async
 
     const followUpTemplates = {
         AUTOMATION: {
@@ -410,12 +584,12 @@ Reply if you want it working.`
     const followUp = followUpTemplates[scenario] || followUpTemplates['AUTOMATION'];
 
     const prompt = `### TASK
-You are Hamdan Ahmad. Rephrase this follow-up to be 2-3 lines shorter than the original email, with a quick client story.
+You are Hamdan Ahmad. Rephrase this follow-up with a quick client success story.
 
 ### RULES
 1. SUBJECT ALWAYS STARTS WITH THE BUSINESS NAME.
 2. Keep the "Hi," greeting on its OWN LINE with a line break AFTER it.
-3. Keep 25-35 words total — this should be SHORT.
+3. Keep 50-60 words total — brief but with substance.
 4. Include a mini story about a past client with a real result.
 5. NO "AI" fluff words (leverage, empower, boost, etc.)
 6. End with "Reply if you want [specific outcome]."
@@ -473,5 +647,6 @@ Return ONLY a valid JSON array in ranked order: ["best@...", "second@...", ...]`
 module.exports = {
     generateOutreachBody,
     generateFollowUpBody,
+    generateSecondFollowUpBody,
     rankEmailsWithAI
 };

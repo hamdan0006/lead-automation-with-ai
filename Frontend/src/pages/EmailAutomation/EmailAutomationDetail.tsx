@@ -27,6 +27,8 @@ interface Lead {
   keyword: string | null;
   createdAt: string;
   receivedReply: boolean;
+  followUpSent: boolean;
+  secondFollowUpSent: boolean;
 }
 
 const EmailAutomationDetail: React.FC = () => {
@@ -437,7 +439,19 @@ const EmailAutomationDetail: React.FC = () => {
                             <span className="flex items-center gap-2 text-xs font-medium relative z-10 bg-inherit">
                                 <span className={`w-3 h-3 rounded-full shrink-0 ${lead.contacted ? 'bg-purple-500 shadow-[0_0_0_2px_rgba(255,255,255,1)] dark:shadow-[0_0_0_2px_rgba(31,41,55,1)]' : 'bg-gray-200 dark:bg-gray-600'}`}></span>
                                 <span className={lead.contacted ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-gray-500'}>
-                                  Outreach Sent
+                                  Initial Outreach
+                                </span>
+                            </span>
+                            <span className="flex items-center gap-2 text-xs font-medium relative z-10 bg-inherit">
+                                <span className={`w-3 h-3 rounded-full shrink-0 ${lead.followUpSent ? 'bg-orange-500 shadow-[0_0_0_2px_rgba(255,255,255,1)] dark:shadow-[0_0_0_2px_rgba(31,41,55,1)]' : 'bg-gray-200 dark:bg-gray-600'}`}></span>
+                                <span className={lead.followUpSent ? 'text-orange-600 dark:text-orange-400 font-bold' : 'text-gray-500'}>
+                                  Follow-up (Day 3)
+                                </span>
+                            </span>
+                            <span className="flex items-center gap-2 text-xs font-medium relative z-10 bg-inherit">
+                                <span className={`w-3 h-3 rounded-full shrink-0 ${lead.secondFollowUpSent ? 'bg-pink-500 shadow-[0_0_0_2px_rgba(255,255,255,1)] dark:shadow-[0_0_0_2px_rgba(31,41,55,1)]' : 'bg-gray-200 dark:bg-gray-600'}`}></span>
+                                <span className={lead.secondFollowUpSent ? 'text-pink-600 dark:text-pink-400 font-bold' : 'text-gray-500'}>
+                                  Follow-up (Day 7)
                                 </span>
                             </span>
                         </div>

@@ -38,11 +38,12 @@ model Lead {
   leadType       String?
   rating         Float?
   reviews        Int?
-  lastEmailedAt  DateTime?
-  followUpDate   DateTime?
-  followUpSent   Boolean      @default(false)
-  followUp       Boolean      @default(true)
-  receivedReply  Boolean      @default(false)
+  lastEmailedAt      DateTime?
+  followUpDate       DateTime?
+  followUpSent       Boolean      @default(false)
+  secondFollowUpSent Boolean      @default(false)
+  followUp           Boolean      @default(true)
+  receivedReply      Boolean      @default(false)
   
   // SEO Data
   seoTitle       String?

@@ -4,7 +4,7 @@ const logger = require('../utils/logger');
 const { sendEmail, addSendEmailJob } = require('../Services/mail.service');
 const { prisma } = require('../config/db');
 const { mailerRules, getRandomInt } = require('../config/mailer.rules');
-const { generateOutreachBody, generateFollowUpBody } = require('../Services/aiEmail.service');
+const { generateOutreachBody, generateFollowUpBody, generateSecondFollowUpBody } = require('../Services/aiEmail.service');
 
 /**
  * Utility to pause execution
@@ -19,7 +19,7 @@ const startMailWorker = () => {
   const worker = new Worker(
     'send-email',
     async (job, token) => {
-      const { leadId, email, leadName } = job.data;
+      const { leadId, email, leadName, isSecondFollowUp } = job.data;
 
       if (!email) {
         logger.warn(`Job ${job.id}: No email provided for lead ${leadId}`);
@@ -78,21 +78,21 @@ const startMailWorker = () => {
           return;
         }
 
-        if (lead.status === 'FOLLOWED_UP') {
+        if (!isSecondFollowUp && lead.status === 'FOLLOWED_UP') {
           logger.info(`🚫 Skipping lead ${leadId}: Outreach campaign already completed (FOLLOWED_UP).`);
           return;
         }
 
         // 2. Initial Outreach Validation
-        if (!job.data.isFollowUp) {
+        if (!job.data.isFollowUp && !isSecondFollowUp) {
           if (lead.status !== 'QUEUED') {
             logger.warn(`🚫 Skipping outreach for lead ${leadId}: Expected status 'QUEUED', but found '${lead.status}'.`);
             return;
           }
         }
 
-        // 3. Follow-up Validation
-        if (job.data.isFollowUp) {
+        // 3. First Follow-up Validation
+        if (job.data.isFollowUp && !isSecondFollowUp) {
           if (lead.status !== 'CONTACTED' || !lead.contacted) {
             logger.warn(`🚫 Skipping follow-up for lead ${leadId}: Lead must be 'CONTACTED' before follow-up, current status: '${lead.status}'.`);
             return;
@@ -103,24 +103,38 @@ const startMailWorker = () => {
           }
         }
 
+        // 4. Second Follow-up Validation
+        if (isSecondFollowUp) {
+          if (lead.status !== 'FOLLOWED_UP' || !lead.followUpSent) {
+            logger.warn(`🚫 Skipping second follow-up for lead ${leadId}: Lead must be 'FOLLOWED_UP' before second follow-up, current status: '${lead.status}'.`);
+            return;
+          }
+          if (lead.followUp === false) {
+             logger.info(`🚫 Skipping second follow-up for lead ${leadId}: Follow-up is disabled in database.`);
+             return;
+          }
+        }
+
         // Check for insecure website (http instead of https)
         const isInsecure = lead.website && lead.website.startsWith('http://');
 
         // Generate AI Content (Dynamic Subject + Body)
         let aiResult = null;
-        logger.info(`🤖 Generating AI email for lead ${leadId} (${job.data.isFollowUp ? 'Follow-up' : 'Outreach'}) ${isInsecure ? '[INSECURE SITE ALERT]' : ''}`);
+        logger.info(`🤖 Generating AI email for lead ${leadId} (${isSecondFollowUp ? 'Second Follow-up' : (job.data.isFollowUp ? 'Follow-up' : 'Outreach')}) ${isInsecure ? '[INSECURE SITE ALERT]' : ''}`);
 
-        if (job.data.isFollowUp) {
+        if (isSecondFollowUp) {
+          aiResult = await generateSecondFollowUpBody(lead);
+        } else if (job.data.isFollowUp) {
           aiResult = await generateFollowUpBody(lead);
         } else {
           aiResult = await generateOutreachBody(lead);
         }
 
         // 1. Send the email with the full lead data, AI content, and dynamic subject
-        await sendEmail(email, lead, aiResult.body, job.data.isFollowUp || false, aiResult.subject);
+        await sendEmail(email, lead, aiResult.body, job.data.isFollowUp || isSecondFollowUp || false, aiResult.subject);
 
         // 2. Update lead status to track contacts and schedule followups if needed
-        if (!job.data.isFollowUp) {
+        if (!job.data.isFollowUp && !isSecondFollowUp) {
           await prisma.lead.update({
             where: { id: leadId },
             data: {
@@ -134,9 +148,9 @@ const startMailWorker = () => {
 
           const followUpDelayMs = 3 * 24 * 60 * 60 * 1000;
           logger.info(`⏰ Scheduling follow-up for lead ${leadId} in 3 days...`);
-          await addSendEmailJob(leadId, email, lead.name, true, followUpDelayMs);
-        } else {
-          // It was a follow up email
+          await addSendEmailJob(leadId, email, lead.name, true, false, followUpDelayMs);
+        } else if (job.data.isFollowUp && !isSecondFollowUp) {
+          // First follow-up sent
           await prisma.lead.update({
             where: { id: leadId },
             data: {
@@ -145,11 +159,25 @@ const startMailWorker = () => {
               lastEmailedAt: new Date()
             }
           });
-          logger.info(`✅ Follow-up sent and marked for lead ${leadId}.`);
+          logger.info(`✅ First follow-up sent for lead ${leadId}.`);
+
+          const secondFollowUpDelayMs = 4 * 24 * 60 * 60 * 1000; // 4 more days (total 7 days from initial)
+          logger.info(`⏰ Scheduling second follow-up for lead ${leadId} in 4 days (day 7 total)...`);
+          await addSendEmailJob(leadId, email, lead.name, false, true, secondFollowUpDelayMs);
+        } else if (isSecondFollowUp) {
+          // Second follow-up sent
+          await prisma.lead.update({
+            where: { id: leadId },
+            data: {
+              secondFollowUpSent: true,
+              lastEmailedAt: new Date()
+            }
+          });
+          logger.info(`✅ Second follow-up sent for lead ${leadId}. Campaign complete.`);
         }
 
         // 🔔 Check for Batch Outreach Completion (Only for Initial Outreach)
-        if (!job.data.isFollowUp && lead.scrapingJobId) {
+        if (!job.data.isFollowUp && !isSecondFollowUp && lead.scrapingJobId) {
           const remainingOutreach = await prisma.lead.count({
             where: {
               scrapingJobId: lead.scrapingJobId,

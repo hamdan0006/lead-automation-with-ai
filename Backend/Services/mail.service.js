@@ -20,23 +20,27 @@ const mailQueue = new Queue('send-email', {
  * @param {string} email 
  * @param {string} leadName 
  * @param {boolean} isFollowUp - Whether this is a follow-up email
+ * @param {boolean} isSecondFollowUp - Whether this is the second follow-up email
  * @param {number} delayMs - Delay before sending
  */
-const addSendEmailJob = async (leadId, email, leadName, isFollowUp = false, delayMs = 0) => {
+const addSendEmailJob = async (leadId, email, leadName, isFollowUp = false, isSecondFollowUp = false, delayMs = 0) => {
   try {
+    const jobSuffix = isSecondFollowUp ? '-followup2' : (isFollowUp ? '-followup' : '');
+    const jobIdSuffix = isSecondFollowUp ? '-followup2' : (isFollowUp ? '-followup' : '-initial');
+    
     const job = await mailQueue.add(
-      `send-email-lead-${leadId}${isFollowUp ? '-followup' : ''}`,
-      { leadId, email, leadName, isFollowUp },
+      `send-email-lead-${leadId}${jobSuffix}`,
+      { leadId, email, leadName, isFollowUp, isSecondFollowUp },
       {
-        jobId: `lead-${leadId}-email${isFollowUp ? '-followup' : '-initial'}`, // 👈 NATIVE DEDUPLICATION
+        jobId: `lead-${leadId}-email${jobIdSuffix}`, // 👈 NATIVE DEDUPLICATION
         delay: delayMs,
-        priority: isFollowUp ? 3 : 2, // Slightly lower priority than extraction
+        priority: isFollowUp || isSecondFollowUp ? 3 : 2, // Slightly lower priority than extraction
         removeOnComplete: true,
         removeOnFail: 100
       }
     );
 
-    logger.info(`📧 Added Lead ${leadId} to send-email queue (Job ID: ${job.id}${isFollowUp ? ', Delayed by ' + (delayMs/86400000) + 'd' : ''})`);
+    logger.info(`📧 Added Lead ${leadId} to send-email queue (Job ID: ${job.id}${isFollowUp || isSecondFollowUp ? ', Delayed by ' + (delayMs/86400000) + 'd' : ''})`);
     return job;
 
   } catch (error) {
