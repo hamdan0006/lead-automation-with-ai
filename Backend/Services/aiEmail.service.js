@@ -87,7 +87,15 @@ const polishBody = (body) => {
     return body.trim();
 };
 
-const getTemplate = (scenario, businessName, city, loadTime) => {
+const getNicheTerminology = (lead) => {
+    const niche = lead.niche ? lead.niche.toLowerCase() : '';
+    if (niche.includes('dent')) return 'patients';
+    if (niche.includes('law') || niche.includes('legal') || niche.includes('attorney')) return 'clients';
+    if (niche.includes('medical') || niche.includes('doctor') || niche.includes('clinic')) return 'patients';
+    return 'customers';
+};
+
+const getTemplate = (scenario, businessName, city, loadTime, customerTerm = 'customers') => {
     const load = loadTime ? `${loadTime}s` : 'several seconds';
     const loc = city || 'your area';
 
@@ -104,10 +112,10 @@ Worth a 10-minute conversation?`
         },
 
         BAD_SEO: {
-            subject: `${businessName} — Google is sending your customers elsewhere`,
+            subject: `${businessName} — Google is sending your ${customerTerm} elsewhere`,
             body: `Hi,
 
-${businessName}'s site is live but Google isn't ranking it for searches in ${loc}. Customers looking for exactly what you offer are finding competitors instead — not because competitors are better, but because their SEO is structured correctly and yours isn't.
+${businessName}'s site is live but Google isn't ranking it for searches in ${loc}. ${customerTerm.charAt(0).toUpperCase() + customerTerm.slice(1)} looking for exactly what you offer are finding competitors instead — not because competitors are better, but because their SEO is structured correctly and yours isn't.
 
 I'm a web developer and I fix this exact problem. One of my recent clients went from invisible to page one in their local area within weeks.
 
@@ -115,10 +123,10 @@ Worth a 10-minute conversation?`
         },
 
         SEO_AND_SPEED: {
-            subject: `${businessName} — two things sending customers to competitors`,
+            subject: `${businessName} — two things sending ${customerTerm} to competitors`,
             body: `Hi,
 
-${businessName}'s site takes ${load} to load and Google isn't ranking it properly in ${loc}. These two problems feed each other — slow sites rank lower, lower ranking means less traffic, less traffic means fewer customers finding you.
+${businessName}'s site takes ${load} to load and Google isn't ranking it properly in ${loc}. These two problems feed each other — slow sites rank lower, lower ranking means less traffic, less traffic means fewer ${customerTerm} finding you.
 
 I'm a web developer and I've fixed this exact combination before. Both are quicker to solve than most people expect.
 
@@ -131,16 +139,16 @@ Worth a 10-minute conversation?`
 
 I checked ${businessName}'s site and browsers are showing a "Not Secure" warning to every visitor. Most people see that and leave straight away — they never even get to see what your business actually offers.
 
-I'm a web developer and I've fixed this for businesses before. Right now it's costing you customers every single day.
+I'm a web developer and I've fixed this for businesses before. Right now it's costing you ${customerTerm} every single day.
 
 Worth a 10-minute conversation?`
         },
 
         INSECURE_ALL: {
-            subject: `${businessName} — three things quietly costing you customers`,
+            subject: `${businessName} — three things quietly costing you ${customerTerm}`,
             body: `Hi,
 
-I checked ${businessName}'s site and browsers are showing a "Not Secure" warning, it takes ${load} to load, and Google isn't ranking it in ${loc}. Each one on its own loses customers — together they make it worse.
+I checked ${businessName}'s site and browsers are showing a "Not Secure" warning, it takes ${load} to load, and Google isn't ranking it in ${loc}. Each one on its own loses ${customerTerm} — together they make it worse.
 
 I'm a web developer and I've fixed this exact combination before. All three are quicker to solve than most people expect.
 
@@ -153,7 +161,7 @@ Worth a 10-minute conversation?`
 
 I just checked ${businessName}'s site and it's completely unreachable. Anyone searching for you in ${loc} right now is hitting a dead end and calling your competitors instead.
 
-I'm a web developer and getting sites back up fast is something I've done before. The longer it stays down the more customers you lose today.
+I'm a web developer and getting sites back up fast is something I've done before. The longer it stays down the more ${customerTerm} you lose today.
 
 Worth a quick call?`
         },
@@ -255,7 +263,8 @@ const generateOutreachBody = async (lead) => {
     const businessName = cleanName(lead.name);
     const { city, loadTime } = lead;
     const scenario = detectScenario(lead);
-    const template = getTemplate(scenario, businessName, city, loadTime);
+    const customerTerm = getNicheTerminology(lead);
+    const template = getTemplate(scenario, businessName, city, loadTime, customerTerm);
 
     logger.info(`📧 Generating email for "${businessName}" | Scenario: ${scenario}`);
 
@@ -305,109 +314,111 @@ const generateFollowUpBody = async (lead) => {
     const scenario = detectScenario(lead);
     const loc = city || 'your area';
     const load = loadTime ? `${loadTime}s` : 'several seconds';
+    const customerTerm = getNicheTerminology(lead);
 
     const followUpTemplates = {
         AUTOMATION: {
             subject: `${businessName} — just following up`,
             body: `Hi,
 
-I sent a note a few days ago about the automation gap on your site. Competitors using this are getting more from the same traffic you already have while you're busy.
+Sent a note last week about automation. A client I worked with last month was manually following up with leads — now it runs itself and he's closing 40% more.
 
-Still happy to show you how to close it today. Reply if you'd like to chat.`
+Reply if you want to see how.`
         },
         BAD_SEO: {
             subject: `${businessName} — Google still can't see you`,
             body: `Hi,
 
-I sent a note a few days ago about your visibility on Google. Right now, customers in ${loc} are searching for you and finding your competitors because of those technical missing pieces I mentioned.
+Sent a note about your SEO. Had a client invisible in ${loc} searches — fixed the technical gaps and he hit page one in three weeks.
 
-Still happy to show you exactly what Google can't see. Just reply.`
+Reply if you want the breakdown.`
         },
         WEBSITE_DOWN: {
             subject: `${businessName} — site still unreachable`,
             body: `Hi,
 
-I sent a note a few days ago about your website being unreachable. Every hour it stays down, you're losing customers in ${loc} to competitors who actually have working links.
+Your site's still down. Every hour costs you ${customerTerm} calling competitors instead.
 
-Still happy to look into it for you today. Just reply.`
+Reply if you want help today.`
         },
         SEO_AND_SPEED: {
-            subject: `${businessName} — still two things costing you customers`,
+            subject: `${businessName} — still losing ${customerTerm} to speed and SEO`,
             body: `Hi,
 
-Just circling back on my note about your site speed and SEO. Those two gaps together mean most potential customers are landing on faster competitors instead.
+Sent a note about your site speed and SEO. Client had the same combo — fixed both and his traffic doubled in a month.
 
-Happy to send you a full breakdown today if you'd like to fix it. Just reply.`
+Reply if you want details.`
         },
         INSECURE: {
-            subject: `${businessName} — the "not secure" warning is still there`,
+            subject: `${businessName} — the warning is still scaring people off`,
             body: `Hi,
 
-Just following up on that security warning on your site. Every day it stays there, visitors are leaving before they ever see what you offer.
+That security warning's still there. Client had the same issue — visitors dropped 60% until we fixed it.
 
-I can show you exactly how to fix it today if you're interested. Just reply.`
+Reply if you want it gone.`
         },
         INSECURE_ALL: {
-            subject: `${businessName} — those roadblocks are still there`,
+            subject: `${businessName} — three things still costing you ${customerTerm}`,
             body: `Hi,
 
-Just circling back on those technical gaps I noticed. The security warning, slow load time, and SEO gaps are all still there — and still sending customers to competitors in ${loc} every day.
+Sent a note about the security warning, speed, and SEO. Client had all three — fixed them and his leads tripled in six weeks.
 
-Still happy to send you a full breakdown today. Just reply.`
+Reply if you want the same.`
         },
         INSECURE_SEO: {
-            subject: `${businessName} — still hard to find and flagged as insecure`,
+            subject: `${businessName} — still flagged and invisible`,
             body: `Hi,
 
-I sent a note a few days ago about those technical gaps. Your site is still showing the security warning and Google still isn't indexing you properly in ${loc}.
+Security warning and SEO are still broken. Client had both — Google wouldn't rank him until we fixed the warning first.
 
-Happy to walk you through exactly how I'd fix both today. Just reply.`
+Reply if you want it fixed.`
         },
         INSECURE_SLOW: {
-            subject: `${businessName} — security warning and load time still there`,
+            subject: `${businessName} — warning and speed still killing traffic`,
             body: `Hi,
 
-Just circling back on those roadblocks. The browser warning and the load time together mean almost nobody who finds you is actually making it through to see your business.
+Security warning and slow load are still there. Client lost 70% of visitors with the same combo until we fixed it.
 
-I can show you how to fix both today if you'd like. Just reply.`
+Reply if you're ready.`
         },
         SLOW_LOAD: {
-            subject: `${businessName} — load time is still costing you`,
+            subject: `${businessName} — speed is still costing you`,
             body: `Hi,
 
-Just following up on your site speed. At ${load}, Google is still quietly ranking faster competitors above you in ${loc}, and most visitors are leaving before your page even finishes.
+Your site's still slow at ${load}. Client had a 6-second load — cut it to 2 and his bounce rate dropped 50%.
 
-Happy to send you a full breakdown today. Just reply.`
+Reply if you want that.`
         },
         NO_WEBSITE: {
-            subject: `${businessName} — customers in ${loc} still can't find you`,
+            subject: `${businessName} — ${customerTerm} still can't find you`,
             body: `Hi,
 
-I sent a note a few days ago about ${businessName} not having a website. Most people in ${loc} search online before they call anyone — right now every one of them is finding your competitors instead.
+You're still invisible online. Client had no site — built one and he got 30 leads in the first month from ${loc} searches.
 
-Still happy to help you get online. Just reply.`
+Reply if you're ready.`
         },
         MOBILE: {
-            subject: `${businessName} — mobile visitors are still leaving`,
+            subject: `${businessName} — mobile is still broken`,
             body: `Hi,
 
-Just circling back on your mobile experience. Over 60% of people finding you in ${loc} are on their phones, and they're still getting the broken experience I mentioned.
+Your mobile site's still broken. Client lost 60% of traffic on phones — fixed it and conversions jumped immediately.
 
-Happy to show you exactly what they're seeing today. Just reply.`
+Reply if you want it working.`
         }
     };
 
     const followUp = followUpTemplates[scenario] || followUpTemplates['AUTOMATION'];
 
     const prompt = `### TASK
-You are Hamdan Ahmad. Rephrase this follow-up to sound short, human, and zero-pressure.
+You are Hamdan Ahmad. Rephrase this follow-up to be 2-3 lines shorter than the original email, with a quick client story.
 
 ### RULES
 1. SUBJECT ALWAYS STARTS WITH THE BUSINESS NAME.
 2. Keep the "Hi," greeting on its OWN LINE with a line break AFTER it.
-3. Every logical part MUST have a blank line (Double Line Break) between them.
-4. Keep 40-60 words total across all paragraphs.
+3. Keep 25-35 words total — this should be SHORT.
+4. Include a mini story about a past client with a real result.
 5. NO "AI" fluff words (leverage, empower, boost, etc.)
+6. End with "Reply if you want [specific outcome]."
 
 ### TEMPLATE
 Subject: ${followUp.subject}
