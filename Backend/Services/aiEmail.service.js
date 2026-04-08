@@ -112,7 +112,7 @@ Website: ${lead.website || 'N/A'}
 
 ### RULES
 - Use "patients" for healthcare/dental/medical businesses
-- Use "clients" for professional services (law, consulting, accounting, real estate, agencies)
+- Use "clients" for professional services (law, consulting, accounting, Real estate, agencies)
 - Use "customers" for retail, restaurants, e-commerce, general services
 
 ### OUTPUT
