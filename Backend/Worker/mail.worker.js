@@ -29,7 +29,7 @@ const startMailWorker = () => {
       // --- GMAIL DAILY SAFETY CHECK (ATOMIC RESERVATION) ---
       const today = new Date().toISOString().split('T')[0];
       const dailyKey = `mail_sent_daily:${today}`;
-      const dailyLimit = 85; // 🛑 Updated to 85 (Total across Outreach + Follow-ups)
+      const dailyLimit = 20; // 🛑 Updated to 20 (Total across Outreach + Follow-ups)
       
       // 🟢 ATOMIC FIX: Increment FIRST to reserve a slot, then check
       const currentSentToday = await redis.incr(dailyKey);

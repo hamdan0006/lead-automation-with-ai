@@ -1,9 +1,9 @@
 const mailerRules = {
   // Delay between individual emails (in ms)
-  // Default: 2-5 minutes to look human
+  // Default: 8-13 minutes to look human
   delayBetweenEmails: {
-    min: 180000, // 3 minutes
-    max: 330000  // 5.5 minutes
+    min: 480000,  // 8 minutes
+    max: 780000   // 13 minutes
   },
 
   // How many emails to send before taking a "coffee break"
