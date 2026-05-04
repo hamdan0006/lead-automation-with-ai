@@ -68,57 +68,62 @@ const validateWithThirdParty = async (email, dnsPass = false, smtpPass = false) 
     // Rotate index for next call
     currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
 
-    try {
-        // Track usage
-        await trackReoonUsage();
-        
-        // Use Reoon
-        logger.info(`🔍 Validating ${email} with Reoon API (Key #${keyNumber})`);
-        const url = `https://emailverifier.reoon.com/api/v1/verify?email=${email}&key=${key}&mode=power`;
-        const response = await axios.get(url, { timeout: 10000 });
-        const status = response.data.status;
-        const isValid = status === 'safe' || status === 'valid';
-        
-        if (isValid) {
-            logger.info(`✅ Reoon validated ${email}: ${status}`);
-        } else {
-            logger.warn(`❌ Reoon rejected ${email}: ${status}`);
-        }
-        
-        return { success: isValid, fallback: false };
-        
-    } catch (error) {
-        const isQuotaError = 
-            error.response?.status === 429 || 
-            error.response?.status === 402 || // Payment required
-            error.message?.toLowerCase().includes('quota') ||
-            error.message?.toLowerCase().includes('limit') ||
-            error.response?.data?.message?.toLowerCase().includes('quota') ||
-            error.response?.data?.message?.toLowerCase().includes('limit');
-        
-        if (isQuotaError) {
-            logger.warn(`⚠️ Reoon quota exhausted for Key #${keyNumber}. Checking fallback...`);
+    // Track usage for the month (optional, but good for logs)
+    await trackReoonUsage();
+
+    // Smart Rotation: Try all keys before giving up
+    for (let i = 0; i < API_KEYS.length; i++) {
+        const keyIndex = (currentKeyIndex + i) % API_KEYS.length;
+        const key = API_KEYS[keyIndex];
+        const keyNumber = keyIndex + 1;
+
+        try {
+            logger.info(`🔍 Validating ${email} with Reoon API (Key #${keyNumber})`);
+            const url = `https://emailverifier.reoon.com/api/v1/verify?email=${email}&key=${key}&mode=power`;
+            const response = await axios.get(url, { timeout: 10000 });
             
-            // FALLBACK: Accept if DNS + SMTP passed
-            if (dnsPass && smtpPass) {
-                logger.warn(`✅ FALLBACK ACCEPTED: ${email} passed DNS + SMTP (Reoon quota exhausted)`);
-                return { success: true, fallback: true };
+            const status = response.data.status;
+            const isValid = status === 'safe' || status === 'valid';
+            
+            // Success! Update the index for the next call to start at the NEXT key
+            currentKeyIndex = (keyIndex + 1) % API_KEYS.length;
+
+            if (isValid) {
+                logger.info(`✅ Reoon validated ${email}: ${status}`);
             } else {
-                logger.error(`❌ FALLBACK REJECTED: ${email} failed DNS or SMTP (Reoon quota exhausted)`);
-                return { success: false, fallback: false };
+                logger.warn(`❌ Reoon rejected ${email}: ${status}`);
             }
+            
+            return { success: isValid, fallback: false };
+
+        } catch (error) {
+            const errorMsg = error.response?.data?.reason || error.response?.data?.message || error.message || '';
+            const isQuotaError = 
+                error.response?.status === 429 || 
+                error.response?.status === 402 || 
+                (error.response?.status === 403 && errorMsg.toLowerCase().includes('credit')) ||
+                errorMsg.toLowerCase().includes('quota') ||
+                errorMsg.toLowerCase().includes('limit');
+
+            if (isQuotaError && i < API_KEYS.length - 1) {
+                logger.warn(`⚠️ Reoon Key #${keyNumber} exhausted (${errorMsg}). Trying next key...`);
+                continue; // Move to the next key in the loop
+            }
+
+            // If we've tried all keys or it's a different error
+            logger.error(`❌ Reoon API error for ${email}: ${error.message} - ${errorMsg}`);
+            
+            if (dnsPass && smtpPass) {
+                logger.warn(`✅ FALLBACK ACCEPTED: ${email} passed DNS + SMTP (Reoon API error)`);
+                return { success: true, fallback: true };
+            }
+            
+            return { 
+                success: false, 
+                fallback: true, 
+                error: errorMsg || error.message 
+            };
         }
-        
-        // Other errors (network, timeout, etc.)
-        logger.error(`❌ Reoon API error for ${email}: ${error.message}`);
-        
-        // FALLBACK: Accept if DNS + SMTP passed
-        if (dnsPass && smtpPass) {
-            logger.warn(`✅ FALLBACK ACCEPTED: ${email} passed DNS + SMTP (Reoon API error)`);
-            return { success: true, fallback: true };
-        }
-        
-        return { success: false, fallback: false };
     }
 };
 
