@@ -13,12 +13,14 @@ const scraperRoutes = require('./Routes/scraper.route');
 const authRoutes = require('./Routes/auth.route');
 const syncRoutes = require('./Routes/sync.route');
 const emailVerificationRoutes = require('./Routes/EmailVerification.route');
+const truckingRoutes = require('./Routes/trucking.route');
 
 // Import Workers
 const { startEmailWorker } = require('./Worker/email.worker');
 const { startMailWorker } = require('./Worker/mail.worker');
 const { startMapsWorker } = require('./Worker/maps.worker');
 const { startReplyWorker } = require('./Worker/reply.worker');
+const { startFmcsaWorker } = require('./Worker/fmcsa.worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +49,7 @@ app.use('/api/scraper', scraperRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/email-verification', emailVerificationRoutes);
+app.use('/api/trucking', truckingRoutes);
 
 // Fallback Route
 app.get('/', (req, res) => {
@@ -64,6 +67,7 @@ const startServer = async () => {
   const emailWorker = startEmailWorker();
   const mailWorker = startMailWorker();
   const mapsWorker = startMapsWorker();
+  const fmcsaWorker = startFmcsaWorker();
   startReplyWorker();
 
   app.listen(PORT, () => {
@@ -80,7 +84,8 @@ const startServer = async () => {
       await Promise.all([
         emailWorker?.close(),
         mailWorker?.close(),
-        mapsWorker?.close()
+        mapsWorker?.close(),
+        fmcsaWorker?.close(),
       ].filter(Boolean));
       
       // Close browser to free memory

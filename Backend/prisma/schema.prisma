@@ -95,3 +95,42 @@ model EmailTemplate {
 
   @@map("email_templates")
 }
+
+model TruckingJob {
+  id         Int            @id @default(autoincrement())
+  fromDot    Int
+  toDot      Int
+  currentDot Int            @default(0)
+  status     String         @default("PENDING")
+  results    Int            @default(0)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  leads      TruckingLead[]
+
+  @@map("trucking_jobs")
+}
+
+model TruckingLead {
+  id               Int          @id @default(autoincrement())
+  usdotNumber      Int          @unique
+  legalName        String?
+  dbaName          String?
+  address          String?
+  city             String?
+  state            String?
+  zip              String?
+  country          String?
+  phone            String?
+  mcNumber         String?
+  entityType       String?
+  operatingStatus  String?
+  driverCount      Int?
+  powerUnits       Int?
+  carrierOperation String?
+  operationClass   String?
+  createdAt        DateTime     @default(now())
+  truckingJobId    Int?
+  truckingJob      TruckingJob? @relation(fields: [truckingJobId], references: [id])
+
+  @@map("trucking_leads")
+}
