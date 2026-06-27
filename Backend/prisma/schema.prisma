@@ -38,6 +38,7 @@ model Lead {
   leadType       String?
   rating         Float?
   reviews        Int?
+  lastReview     String?
   lastEmailedAt      DateTime?
   followUpDate       DateTime?
   followUpSent       Boolean      @default(false)
@@ -52,6 +53,13 @@ model Lead {
   // Performance Data
   loadTime       Float?
   isResponsive   Boolean?
+
+  // Custom Management Fields
+  interested            Boolean      @default(false)
+  transcriptPulled      Boolean      @default(false)
+  transferToTechTeam    Boolean      @default(false)
+  personalContactNumber String?
+  personalEmail         String?
 
   scrapingJob    ScrapingJob? @relation(fields: [scrapingJobId], references: [id])
 
@@ -71,6 +79,13 @@ model ScrapingJob {
   @@map("scraping_jobs")
 }
 
+enum Role {
+  VIEWER
+  REP
+  ADMIN
+  SUPER_ADMIN
+}
+
 model User {
   id         Int      @id @default(autoincrement())
   firstName  String
@@ -78,6 +93,7 @@ model User {
   email      String   @unique
   username   String   @unique
   password   String
+  role       Role     @default(VIEWER)
   isVerified Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -128,6 +144,7 @@ model TruckingLead {
   powerUnits       Int?
   carrierOperation String?
   operationClass   String?
+  contacted        Boolean      @default(false)
   createdAt        DateTime     @default(now())
   truckingJobId    Int?
   truckingJob      TruckingJob? @relation(fields: [truckingJobId], references: [id])

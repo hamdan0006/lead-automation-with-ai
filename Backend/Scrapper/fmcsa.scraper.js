@@ -2,13 +2,14 @@ const puppeteer = require('puppeteer');
 const { prisma } = require('../config/db');
 const logger = require('../utils/logger');
 const { getRandomInt } = require('../config/scraper.rules');
+const { loadProxies, ProxyRotator, PROXY_ROTATION_RULES } = require('../config/fmca.scraper.rules');
 const { sendNotificationEmail } = require('../Services/mail.service');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // SAFER carrier snapshot URL — GET request, no form POST needed
-const SAFER_URL = (dotNumber) =>
-  `https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&query_param=USDOT&query_string=${dotNumber}`;
+const SAFER_URL = (mcNumber) =>
+  `https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&query_param=MC_MX&query_string=${mcNumber}`;
 
 /**
  * Extract carrier data from a SAFER HTML page.
@@ -82,14 +83,17 @@ const extractCarrierData = async (page) => {
       return null;
     };
 
-    // ── 3. Phone fallback via regex ───────────────────────────────────────
-    const phoneRegex = /\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}/;
-    const phoneMatch = bodyText.match(phoneRegex);
+    // ── 3. Phone fallback — only match a number appearing right after a Phone/Tel label ──
+    // Searching the full body with a bare regex picks up USDOT, MC, and other numeric IDs.
+    const phoneContextMatch = bodyText.match(
+      /(?:Phone|Tel(?:ephone)?)\s*[:\-]?\s*(\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})/i
+    );
 
     return {
+      usdotNumber:      findField('USDOT Number', 'US DOT Number', 'USDOT'),
       legalName:        legalName || findField('Legal Name'),
       dbaName:          findField('DBA Name', 'DBA'),
-      phone:            findField('Phone', 'Telephone') || (phoneMatch ? phoneMatch[0] : null),
+      phone:            findField('Phone', 'Telephone') || (phoneContextMatch ? phoneContextMatch[1].trim() : null),
       address:          findField('Physical Address', 'Address'),
       mcNumber:         findField('MC\\/MX\\/FF Number\\(s\\)', 'MC Number', 'MC\\/MX Number'),
       entityType:       findField('Entity Type'),
@@ -112,6 +116,7 @@ const parseCarrierFields = (raw) => {
   const parseNum = (v) => v ? (parseInt(String(v).replace(/[^0-9]/g, '')) || null) : null;
 
   return {
+    usdotNumber:      parseNum(raw.usdotNumber),
     legalName:        clean(raw.legalName),
     dbaName:          clean(raw.dbaName),
     phone:            clean(raw.phone),
@@ -143,18 +148,10 @@ const splitAddress = (address) => {
 };
 
 /**
- * Main FMCSA SAFER scraper.
- *
- * Iterates USDOT numbers fromDot → toDot, visits each carrier snapshot page,
- * and saves the carrier data into the trucking_leads table.
- *
- * ⚠️  PROXY REQUIRED FROM NON-US IPs:
- *   Set FMCSA_PROXY_URL=http://user:pass@us-proxy-host:port in .env
+ * Launch a Puppeteer browser pointed at a specific proxy.
+ * Returns { browser, page } ready for authenticated requests.
  */
-const runFmcsaScraper = async (fromDot, toDot, jobId) => {
-  let browser = null;
-
-  const proxyUrl = process.env.FMCSA_PROXY_URL;
+const launchBrowserWithProxy = async (proxy) => {
   const args = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -162,40 +159,67 @@ const runFmcsaScraper = async (fromDot, toDot, jobId) => {
     '--disable-blink-features=AutomationControlled',
   ];
 
-  if (proxyUrl) {
-    // Extract host:port only (strip credentials) for the Chrome flag
-    const hostPort = proxyUrl.replace(/^https?:\/\//, '').replace(/^[^@]+@/, '');
-    args.push(`--proxy-server=http://${hostPort}`);
-    logger.info(`🔒 FMCSA proxy active: ${hostPort}`);
-  } else {
-    logger.warn('⚠️  FMCSA_PROXY_URL not set — requests will come from server IP. Set a US proxy if blocked.');
+  if (proxy) {
+    args.push(`--proxy-server=http://${proxy.host}:${proxy.port}`);
   }
 
-  try {
-    logger.info(`🚛 FMCSA scraper starting: DOT ${fromDot} → ${toDot} (Job #${jobId})`);
+  const browser = await puppeteer.launch({ headless: true, args });
+  const page    = await browser.newPage();
 
-    browser = await puppeteer.launch({ headless: true, args });
-    const page = await browser.newPage();
+  await page.setUserAgent(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  );
 
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+  if (proxy) {
+    await page.authenticate({ username: proxy.username, password: proxy.password });
+  }
 
-    // Authenticate proxy if credentials are embedded in the URL
-    if (proxyUrl && proxyUrl.includes('@')) {
-      const m = proxyUrl.match(/\/\/([^:@]+):([^@]+)@/);
-      if (m) await page.authenticate({ username: m[1], password: m[2] });
+  return { browser, page };
+};
+
+/**
+ * Main FMCSA SAFER scraper.
+ *
+ * Iterates USDOT numbers fromDot → toDot, visits each carrier snapshot page,
+ * and saves the carrier data into the trucking_leads table.
+ *
+ * Proxies: set FMCSA_PROXY_URL1…FMCSA_PROXY_URL5 in .env (format: host:port:user:pass).
+ * Rotation rules are defined in config/fmca.scraper.rules.js.
+ */
+const runFmcsaScraper = async (fromDot, toDot, jobId) => {
+  const proxies = loadProxies();
+  const rotator = proxies.length > 0 ? new ProxyRotator(proxies) : null;
+
+  if (rotator) {
+    logger.info(`🔒 FMCSA proxy pool: ${proxies.length} proxies loaded. Rotating every ${PROXY_ROTATION_RULES.rotateAfter.min}–${PROXY_ROTATION_RULES.rotateAfter.max} requests.`);
+  } else {
+    logger.warn('⚠️  No FMCSA_PROXY_URL1–5 found in .env — requests will come from server IP.');
+  }
+
+  let browser = null;
+  let page    = null;
+
+  const initBrowser = async () => {
+    if (browser) await browser.close().catch(() => {});
+    const proxy = rotator ? rotator.current : null;
+    if (proxy) {
+      logger.info(`🔄 Browser (re)started with proxy ${rotator.index + 1}/${rotator.total}: ${proxy.host}:${proxy.port}`);
     }
+    ({ browser, page } = await launchBrowserWithProxy(proxy));
+  };
 
-    let leadsFound  = 0;
-    let blockedCount = 0;
+  try {
+    logger.info(`🚛 FMCSA scraper starting: MC ${fromDot} → ${toDot} (Job #${jobId})`);
+    await initBrowser();
+
+    let leadsFound   = 0;
+    let fatalBlocks  = 0;
 
     for (let dot = fromDot; dot <= toDot; dot++) {
-      // Update live progress counter in DB
       if (jobId) {
         await prisma.truckingJob.update({
           where: { id: jobId },
-          data: { currentDot: dot },
+          data:  { currentDot: dot },
         }).catch(() => {});
       }
 
@@ -204,44 +228,89 @@ const runFmcsaScraper = async (fromDot, toDot, jobId) => {
 
         const raw = await extractCarrierData(page);
 
-        // ── Blocked page ─────────────────────────────────────────────────
+        // ── Blocked ───────────────────────────────────────────────────────
         if (raw._blocked) {
-          blockedCount++;
-          logger.error(`🚫 USDOT #${dot}: IP BLOCKED by FMCSA. Set FMCSA_PROXY_URL in .env. Snippet: ${raw._snippet}`);
-          if (blockedCount >= 3) {
-            logger.error('❌ Blocked 3 times in a row — stopping job. Configure a US proxy.');
-            break;
+          logger.error(`🚫 MC #${dot}: blocked. Snippet: ${raw._snippet}`);
+
+          if (rotator) {
+            rotator.onBlock();
+            if (rotator.rotated) {
+              const backoff = getRandomInt(
+                PROXY_ROTATION_RULES.blockBackoff.min,
+                PROXY_ROTATION_RULES.blockBackoff.max
+              );
+              logger.info(`🔄 Rotating proxy after block — waiting ${backoff}ms…`);
+              await sleep(backoff);
+              await initBrowser();
+            }
+            fatalBlocks = 0;
+          } else {
+            fatalBlocks++;
+            if (fatalBlocks >= 3) {
+              logger.error('❌ Blocked 3× with no proxy configured — stopping job.');
+              break;
+            }
           }
           continue;
         }
 
-        // ── No carrier at this DOT number ────────────────────────────────
+        // ── No record ─────────────────────────────────────────────────────
         if (raw._notFound) {
-          logger.info(`⏭  USDOT #${dot}: no carrier record.`);
+          logger.info(`⏭  MC #${dot}: no carrier record.`);
+          if (rotator) rotator.tick();
           await sleep(getRandomInt(400, 900));
           continue;
         }
 
-        // ── Debug: show what we got for first 3 DOTs ────────────────────
+        // ── Debug: first 3 MCs ────────────────────────────────────────────
         if (dot - fromDot < 3) {
-          logger.info(`🔎 USDOT #${dot} page title: "${raw._title}"`);
-          logger.info(`🔎 USDOT #${dot} body snippet: ${raw._snippet}`);
-          logger.info(`🔎 USDOT #${dot} raw keys: ${Object.keys(raw).filter(k => !k.startsWith('_')).join(', ')}`);
+          logger.info(`🔎 MC #${dot} title: "${raw._title}"`);
+          logger.info(`🔎 MC #${dot} snippet: ${raw._snippet}`);
         }
 
         const fields = parseCarrierFields(raw);
 
         if (!fields.legalName) {
-          logger.warn(`⏭  USDOT #${dot}: page loaded but no "Legal Name" found. Title="${raw._title}" Keys="${Object.keys(raw).join(',')}" Snippet="${(raw._snippet || '').substring(0, 150)}"`);
+          logger.warn(`⏭  MC #${dot}: no Legal Name. Title="${raw._title}" Snippet="${(raw._snippet || '').substring(0, 150)}"`);
+          if (rotator) rotator.tick();
           await sleep(getRandomInt(400, 900));
           continue;
         }
 
+        if (!fields.usdotNumber) {
+          logger.warn(`⏭  MC #${dot}: no USDOT Number — skipping.`);
+          if (rotator) rotator.tick();
+          await sleep(getRandomInt(400, 900));
+          continue;
+        }
+
+        // ── Trucking-only filter ──────────────────────────────────────────────
+        // Skip brokers, freight forwarders, and passenger carriers.
+        // FMCSA entityType for pure brokers/FFs does not include "CARRIER".
+        const entityType      = (fields.entityType      || '').toUpperCase();
+        const operationClass  = (fields.operationClass  || '').toUpperCase();
+        const carrierOperation= (fields.carrierOperation|| '').toUpperCase();
+
+        const isBrokerOrFF = !entityType.includes('CARRIER') && (
+          entityType.includes('BROKER') || entityType.includes('FREIGHT FORWARDER')
+        );
+        // Passenger carriers (school bus, charter, etc.) — skip unless they also haul property
+        const isPassengerOnly = operationClass.includes('PASSENGER') && !operationClass.includes('PROPERTY');
+
+        if (isBrokerOrFF || isPassengerOnly) {
+          logger.info(`⏭  MC #${dot}: skipped — not a trucking company (entity: "${fields.entityType}", class: "${fields.operationClass}")`);
+          if (rotator) rotator.tick();
+          await sleep(getRandomInt(400, 900));
+          continue;
+        }
+
+        if (!fields.mcNumber) fields.mcNumber = `MC-${dot}`;
+
         const { city, state, zip } = splitAddress(fields.address);
 
         await prisma.truckingLead.upsert({
-          where:  { usdotNumber: dot },
-          create: { usdotNumber: dot, ...fields, city, state, zip, country: 'US', truckingJobId: jobId || null },
+          where:  { usdotNumber: fields.usdotNumber },
+          create: { ...fields, city, state, zip, country: 'US', truckingJobId: jobId || null },
           update: { ...fields, city, state, zip, country: 'US' },
         });
 
@@ -253,10 +322,17 @@ const runFmcsaScraper = async (fromDot, toDot, jobId) => {
           }).catch(() => {});
         }
 
-        logger.info(`✅ USDOT #${dot}: saved "${fields.legalName}" | ${fields.phone || 'no phone'} | ${fields.operatingStatus || '?'} (total: ${leadsFound})`);
+        logger.info(`✅ MC #${dot}: "${fields.legalName}" | ${fields.phone || 'no phone'} | ${fields.operatingStatus || '?'} (total: ${leadsFound})`);
+
+        // ── Tick rotator; restart browser if rotation triggered ────────────
+        if (rotator) {
+          rotator.onSuccess();
+          rotator.tick();
+          if (rotator.rotated) await initBrowser();
+        }
 
       } catch (dotErr) {
-        logger.warn(`⚠️  USDOT #${dot} request error: ${dotErr.message}`);
+        logger.warn(`⚠️  MC #${dot} request error: ${dotErr.message}`);
       }
 
       await sleep(getRandomInt(1500, 3000));
@@ -272,12 +348,12 @@ const runFmcsaScraper = async (fromDot, toDot, jobId) => {
       try {
         await sendNotificationEmail(
           `Trucking Scrape Job #${jobId} Finished`,
-          `DOT Range: ${fromDot}–${toDot}\nCarriers Saved: ${leadsFound}`
+          `MC Range: ${fromDot}–${toDot}\nCarriers Saved: ${leadsFound}`
         );
       } catch (_) {}
     }
 
-    logger.info(`🏁 FMCSA scrape complete — ${leadsFound} carriers saved (DOT ${fromDot}–${toDot})`);
+    logger.info(`🏁 FMCSA scrape complete — ${leadsFound} carriers saved (MC ${fromDot}–${toDot})`);
 
   } catch (fatalErr) {
     logger.error(`❌ FMCSA fatal error: ${fatalErr.message}`);

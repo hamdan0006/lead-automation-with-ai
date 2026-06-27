@@ -49,5 +49,23 @@ const deleteTruckingJob = async (jobId) => {
   await prisma.truckingLead.deleteMany({ where: { truckingJobId: parseInt(jobId) } });
   await prisma.truckingJob.delete({ where: { id: parseInt(jobId) } });
 };
+/**
+ * Toggle contacted status for a single TruckingLead.
+ */
+const updateLeadContacted = async (leadId, contacted) => {
+  return await prisma.truckingLead.update({
+    where: { id: parseInt(leadId) },
+    data:  { contacted },
+  });
+};
 
-module.exports = { startFmcsaScraping, getTruckingJobs, getTruckingLeads, deleteTruckingJob };
+/**
+ * Fetch all trucking leads without pagination for export.
+ */
+const getAllTruckingLeadsForExport = async () => {
+  return await prisma.truckingLead.findMany({
+    orderBy: { usdotNumber: 'asc' },
+  });
+};
+
+module.exports = { startFmcsaScraping, getTruckingJobs, getTruckingLeads, deleteTruckingJob, getAllTruckingLeadsForExport, updateLeadContacted };

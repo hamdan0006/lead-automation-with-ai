@@ -7,8 +7,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: leadsdb
-    ports:
-      - "0.0.0.0:5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 
@@ -16,8 +14,6 @@ services:
     image: redis:7-alpine
     container_name: leads_redis
     restart: always
-    ports:
-      - "0.0.0.0:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -37,8 +33,6 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
-    ports:
-      - "3000:3000"
     command: sh -c "npx prisma migrate deploy && node index.js"
     deploy:
       resources:
@@ -49,11 +43,8 @@ services:
           memory: 512M
     shm_size: '256m'
     environment:
-      # Inject DATABASE_URL and REDIS_URL dynamically
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/leadsdb?schema=public
       REDIS_URL: redis://redis:6379
-      # Other variables should be provided in a .env file or environment
-      # Internal App Variables (Injected from host .env)
       JWT_SECRET: ${JWT_SECRET}
       App_Pass: ${App_Pass}
       SMTP_EMAIL: ${SMTP_EMAIL}
@@ -61,11 +52,9 @@ services:
       OPENAI_KEY: ${OPENAI_KEY}
       Llama_KEY: ${Llama_KEY}
       Nvidia_super3: ${Nvidia_super3}
-      # Reoon API Keys
       REOON_API_KEY1: ${REOON_API_KEY1}
       REOON_API_KEY2: ${REOON_API_KEY2}
       REOON_API_KEY3: ${REOON_API_KEY3}
-      # SerpStack API Keys (Full Set)
       SERPSTACK_API_KEY1: ${SERPSTACK_API_KEY1}
       SERPSTACK_API_KEY2: ${SERPSTACK_API_KEY2}
       SERPSTACK_API_KEY3: ${SERPSTACK_API_KEY3}
@@ -77,6 +66,19 @@ services:
       SERPSTACK_API_KEY9: ${SERPSTACK_API_KEY9}
       SERPSTACK_API_KEY10: ${SERPSTACK_API_KEY10}
       SERPSTACK_API_URL: ${SERPSTACK_API_URL:-https://api.serpstack.com/search}
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: leads_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
 
 volumes:
   db_data:

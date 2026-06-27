@@ -3,6 +3,8 @@ const { prisma } = require('../config/db');
 const scraperService = require('../Services/scraper.service');
 const emailQueueService = require('../Services/emailQueue.service');
 const mailService = require('../Services/mail.service');
+const axios = require('axios');
+
 
 const verifyPuppeteer = async (req, res) => {
   try {
@@ -431,6 +433,227 @@ const deleteJob = async (req, res) => {
   }
 };
 
+const getAllLeads = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const search = req.query.search || '';
+    
+    const skip = (page - 1) * limit;
+    
+    const whereClause = search ? {
+      OR: [
+        { name: { contains: search, mode: 'insensitive' } },
+        { company: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { city: { contains: search, mode: 'insensitive' } }
+      ]
+    } : {};
+
+    const [leads, totalCount] = await Promise.all([
+      prisma.lead.findMany({
+        where: whereClause,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.lead.count({ where: whereClause })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: leads,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        totalPages: Math.ceil(totalCount / limit)
+      }
+    });
+  } catch (error) {
+    logger.error(`Error fetching all leads: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to fetch all leads.' });
+  }
+};
+
+const updateLeadCustomFields = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      contacted,
+      interested,
+      transcriptPulled,
+      transferToTechTeam,
+      personalContactNumber,
+      personalEmail
+    } = req.body;
+
+    const lead = await prisma.lead.update({
+      where: { id: parseInt(id) },
+      data: {
+        contacted: contacted !== undefined ? contacted : undefined,
+        interested: interested !== undefined ? interested : undefined,
+        transcriptPulled: transcriptPulled !== undefined ? transcriptPulled : undefined,
+        transferToTechTeam: transferToTechTeam !== undefined ? transferToTechTeam : undefined,
+        personalContactNumber: personalContactNumber !== undefined ? personalContactNumber : undefined,
+        personalEmail: personalEmail !== undefined ? personalEmail : undefined
+      }
+    });
+
+    res.status(200).json({ success: true, message: 'Lead updated successfully.', lead });
+  } catch (error) {
+    logger.error(`Error updating lead ${req.params.id}: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to update lead.' });
+  }
+};
+
+const getLeadById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const lead = await prisma.lead.findUnique({
+      where: { id: parseInt(id) },
+      include: { scrapingJob: { select: { id: true, status: true, leadType: true } } }
+    });
+
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found.' });
+    }
+
+    res.status(200).json({ success: true, lead });
+  } catch (error) {
+    logger.error(`Error fetching lead ${req.params.id}: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to fetch lead.' });
+  }
+};
+
+const enrichLeadWithApollo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const lead = await prisma.lead.findUnique({ where: { id: parseInt(id) } });
+
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found.' });
+    }
+
+    const apolloKey = process.env.APOLLO_API_KEY;
+    if (!apolloKey) {
+      return res.status(500).json({ success: false, message: 'Apollo API key not configured.' });
+    }
+
+    // ── Build domain & org name ───────────────────────────────────────────────
+    let organizationDomain = null;
+    let organizationName = lead.name || null;
+
+    if (lead.website) {
+      try {
+        organizationDomain = new URL(
+          lead.website.startsWith('http') ? lead.website : `https://${lead.website}`
+        ).hostname.replace(/^www\./, '');
+      } catch (_) {}
+    }
+
+    const formatPerson = (p) => ({
+      name: p.name || null,
+      firstName: p.first_name || null,
+      lastName: p.last_name || null,
+      title: p.title || null,
+      email: p.email || null,
+      phone: p.sanitized_phone || p.phone_numbers?.[0]?.sanitized_number || null,
+      linkedinUrl: p.linkedin_url || null,
+      photo: p.photo_url || null,
+      city: p.city || null,
+      state: p.state || null,
+      country: p.country || null,
+      organization: p.organization?.name || null,
+      seniority: p.seniority || null,
+    });
+
+    const results = [];
+    const seenNames = new Set();
+
+    // ── STEP 1: Organization Enrich (gets key people in the company) ──────────
+    // Works on free plan — returns org details + up to 5 org chart people
+    if (organizationDomain || organizationName) {
+      try {
+        const orgParams = { api_key: apolloKey };
+        if (organizationDomain) orgParams.domain = organizationDomain;
+        else orgParams.name = organizationName;
+
+        const orgRes = await axios.get('https://api.apollo.io/v1/organizations/enrich', {
+          params: orgParams,
+          timeout: 12000
+        });
+
+        const org = orgRes.data?.organization;
+        if (org) {
+          // Pull any people attached to the org record
+          const orgPeople = [
+            ...(org.current_technologies ? [] : []),
+            ...(Array.isArray(org.people) ? org.people : []),
+          ];
+
+          for (const p of orgPeople) {
+            if (p.name && !seenNames.has(p.name)) {
+              seenNames.add(p.name);
+              results.push(formatPerson(p));
+            }
+          }
+
+          logger.info(`Apollo org enrich found ${orgPeople.length} people for: ${org.name}`);
+        }
+      } catch (orgErr) {
+        if (!orgErr.response || orgErr.response.status !== 404) {
+          logger.warn(`Apollo org enrich failed: ${orgErr.message}`);
+        }
+      }
+    }
+
+    // ── STEP 2: people/match for common owner titles ──────────────────────────
+    // Works on free plan — searches by title + org domain or name
+    const ownerTitles = ['Owner', 'CEO', 'Founder', 'Co-Founder', 'President', 'Managing Director', 'Director'];
+
+    for (const title of ownerTitles) {
+      if (results.length >= 6) break;
+      try {
+        const body = { api_key: apolloKey, title };
+        if (organizationDomain) body.organization_domain = organizationDomain;
+        else if (organizationName) body.organization_name = organizationName;
+        else break;
+
+        const matchRes = await axios.post(
+          'https://api.apollo.io/v1/people/match',
+          body,
+          { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+        );
+
+        const person = matchRes.data?.person;
+        if (person && person.name && !seenNames.has(person.name)) {
+          seenNames.add(person.name);
+          results.push(formatPerson(person));
+        }
+      } catch (matchErr) {
+        if (!matchErr.response || matchErr.response.status !== 404) {
+          logger.warn(`Apollo match failed for "${title}": ${matchErr.message}`);
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      people: results,
+      total: results.length,
+      searchedBy: organizationDomain ? `domain: ${organizationDomain}` : `name: ${organizationName}`
+    });
+
+  } catch (error) {
+    logger.error(`Apollo enrichment error for lead ${req.params.id}: ${error.message}`);
+    if (error.response) {
+      logger.error(`Apollo response: ${JSON.stringify(error.response.data)}`);
+    }
+    res.status(500).json({ success: false, message: 'Failed to enrich lead with Apollo.', error: error.message });
+  }
+};
+
 module.exports = {
   verifyPuppeteer,
   triggerMapsScraper,
@@ -443,5 +666,10 @@ module.exports = {
   getLeadsByJobId,
   getJobs,
   getLeadsWithoutWebsite,
-  deleteJob
+  deleteJob,
+  getAllLeads,
+  updateLeadCustomFields,
+  getLeadById,
+  enrichLeadWithApollo
 };
+

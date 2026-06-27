@@ -30,20 +30,21 @@ const registerUser = async (data) => {
   const saltRounds = 10;
   const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-  // 3. Create the user
+  // 3. Create the user (default role: VIEWER)
   const user = await prisma.user.create({
     data: {
       firstName,
       lastName,
       email,
       username,
-      password: hashedPassword
+      password: hashedPassword,
+      role: 'VIEWER'
     }
   });
 
   // 4. Generate a JWT Token
   const token = jwt.sign(
-    { userId: user.id, email: user.email },
+    { userId: user.id, email: user.email, role: user.role },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
@@ -70,7 +71,7 @@ const loginUser = async (email, password) => {
 
   // 3. Generate a JWT Token
   const token = jwt.sign(
-    { userId: user.id, email: user.email },
+    { userId: user.id, email: user.email, role: user.role },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
@@ -90,8 +91,77 @@ const getUserById = async (id) => {
   return user;
 };
 
+const listUsers = async () => {
+  return prisma.user.findMany({
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      username: true,
+      role: true,
+      isVerified: true,
+      createdAt: true
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+};
+
+const createUserWithRole = async (data) => {
+  const { firstName, lastName, email, username, password, role } = data;
+
+  const allowedRoles = ['VIEWER', 'REP', 'ADMIN'];
+  if (!allowedRoles.includes(role)) {
+    throw new Error(`Invalid role. Allowed: ${allowedRoles.join(', ')}`);
+  }
+
+  const existingUser = await prisma.user.findFirst({
+    where: { OR: [{ email }, { username }] }
+  });
+
+  if (existingUser) {
+    if (existingUser.email === email) throw new Error('User with this email already exists.');
+    throw new Error('Username is already taken.');
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  return prisma.user.create({
+    data: { firstName, lastName, email, username, password: hashedPassword, role },
+    select: { id: true, firstName: true, lastName: true, email: true, username: true, role: true, createdAt: true }
+  });
+};
+
+const deleteUser = async (id) => {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new Error('User not found.');
+  if (user.role === 'SUPER_ADMIN') throw new Error('Cannot delete a Super Admin.');
+  await prisma.user.delete({ where: { id } });
+};
+
+const updateUserRole = async (id, newRole, requestorRole) => {
+  const allowedRoles = ['VIEWER', 'REP', 'ADMIN'];
+  if (!allowedRoles.includes(newRole)) {
+    throw new Error(`Invalid role. Allowed: ${allowedRoles.join(', ')}`);
+  }
+
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) throw new Error('User not found.');
+  if (target.role === 'SUPER_ADMIN') throw new Error('Cannot modify a Super Admin.');
+
+  return prisma.user.update({
+    where: { id },
+    data: { role: newRole },
+    select: { id: true, firstName: true, lastName: true, email: true, role: true }
+  });
+};
+
 module.exports = {
   registerUser,
   loginUser,
-  getUserById
+  getUserById,
+  listUsers,
+  createUserWithRole,
+  deleteUser,
+  updateUserRole
 };

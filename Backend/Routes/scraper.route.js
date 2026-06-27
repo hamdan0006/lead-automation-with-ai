@@ -12,7 +12,11 @@ const {
   getLeadsByJobId,
   getJobs,
   getLeadsWithoutWebsite,
-  deleteJob
+  deleteJob,
+  getAllLeads,
+  updateLeadCustomFields,
+  getLeadById,
+  enrichLeadWithApollo
 } = require('../Controllers/scraper.controller');
 const { verifyToken } = require('../middlewares/auth.middleware');
 
@@ -48,5 +52,17 @@ router.delete('/jobs/:jobId', deleteJob);
 
 // GET /scraper/no-website
 router.get('/no-website', getLeadsWithoutWebsite);
+
+// GET /scraper/all-leads
+router.get('/all-leads', getAllLeads);
+
+// PUT /scraper/leads/:id/custom-fields
+router.put('/leads/:id/custom-fields', updateLeadCustomFields);
+
+// GET /scraper/leads/:id
+router.get('/leads/:id', getLeadById);
+
+// POST /scraper/leads/:id/apollo-enrich
+router.post('/leads/:id/apollo-enrich', enrichLeadWithApollo);
 
 module.exports = router;

@@ -16,7 +16,7 @@ import {
   TableIcon,
   UserCircleIcon,
 } from "../icons";
-import { Workflow, Zap, MessageSquare, Layers, HelpCircle, LogOut, Link2, DollarSign } from "lucide-react";
+import { Workflow, Zap, MessageSquare, Layers, HelpCircle, LogOut, Link2, DollarSign, Truck, UserCog } from "lucide-react";
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
 import useAuthStore from "../stores/useAuthStore";
@@ -87,11 +87,18 @@ const AppSidebar: React.FC = () => {
     ));
   };
 
-  const navItems: NavItem[] = [
+  const isViewer = user?.role === 'VIEWER';
+
+  const navItems: NavItem[] = isViewer ? [] : [
     {
       icon: <GridIcon />,
       name: "Dashboard",
       path: "/dashboard",
+    },
+    {
+      icon: <Layers className="w-[24px] h-[24px]" />,
+      name: "Gmap Leads",
+      path: "/gmap-leads",
     },
     {
       icon: <Workflow className="w-[24px] h-[24px]" />,
@@ -108,7 +115,16 @@ const AppSidebar: React.FC = () => {
       name: "Start Email Automation",
       path: "/start-automation",
     },
-
+    {
+      icon: <Truck className="w-[24px] h-[24px]" />,
+      name: "Truck Leads",
+      path: "/truck-leads",
+    },
+    ...(user?.role === 'SUPER_ADMIN' ? [{
+      icon: <UserCog className="w-[24px] h-[24px]" />,
+      name: "User Management",
+      path: "/user-management",
+    }] : []),
   ];
 
   const othersItems: NavItem[] = [

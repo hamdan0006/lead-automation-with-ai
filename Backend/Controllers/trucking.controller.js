@@ -1,6 +1,25 @@
 const logger = require('../utils/logger');
 const truckingService = require('../Services/trucking.service');
 
+/**
+ * PATCH /api/trucking/leads/:leadId/contacted
+ * Body: { contacted: boolean }
+ */
+const patchLeadContacted = async (req, res) => {
+  try {
+    const { leadId } = req.params;
+    const { contacted } = req.body;
+    if (typeof contacted !== 'boolean') {
+      return res.status(400).json({ success: false, message: '`contacted` must be a boolean.' });
+    }
+    const lead = await truckingService.updateLeadContacted(leadId, contacted);
+    res.json({ success: true, lead });
+  } catch (error) {
+    logger.error(`patchLeadContacted error: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to update contacted status.', error: error.message });
+  }
+};
+
 const MAX_DOT_RANGE = 5000;
 
 /**
@@ -110,5 +129,18 @@ const deleteTruckingJob = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to delete trucking job.', error: error.message });
   }
 };
+/**
+ * GET /api/trucking/all-leads
+ * Returns all trucking leads for export.
+ */
+const getAllTruckingLeadsExport = async (req, res) => {
+  try {
+    const leads = await truckingService.getAllTruckingLeadsForExport();
+    res.json({ success: true, leads });
+  } catch (error) {
+    logger.error(`getAllTruckingLeadsExport error: ${error.message}`);
+    res.status(500).json({ success: false, message: 'Failed to fetch all trucking leads.', error: error.message });
+  }
+};
 
-module.exports = { triggerFmcsaScraper, getTruckingJobs, getTruckingLeads, deleteTruckingJob };
+module.exports = { triggerFmcsaScraper, getTruckingJobs, getTruckingLeads, deleteTruckingJob, getAllTruckingLeadsExport, patchLeadContacted };

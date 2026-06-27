@@ -70,7 +70,65 @@ const getRandomInt = (min, max) => {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
+// ── Google Maps proxy rotation ───────────────────────────────────────────────
+
+const GMAP_PROXY_RULES = {
+  // Each scraping job gets the next proxy in round-robin order
+  rotatePerJob: true,
+  // Rotate immediately when a CAPTCHA is detected mid-job
+  rotatOnCaptcha: true,
+  // Back-off before relaunching with new proxy after CAPTCHA (ms)
+  captchaBackoff: { min: 5000, max: 12000 },
+};
+
+// Parse env format:  host:port:username:password
+const _parseProxyStr = (raw) => {
+  if (!raw) return null;
+  const str   = raw.trim().replace(/[`\s]/g, '');
+  const parts = str.split(':');
+  if (parts.length < 4) return null;
+  const host     = parts[0];
+  const port     = parts[1];
+  const password = parts[parts.length - 1];
+  const username = parts.slice(2, parts.length - 1).join(':');
+  return { host, port, username, password };
+};
+
+const loadGmapProxies = () => {
+  const proxies = [];
+  for (let i = 1; i <= 5; i++) {
+    const p = _parseProxyStr(process.env[`FMCSA_PROXY_URL_GMAP${i}`]);
+    if (p) proxies.push(p);
+  }
+  return proxies;
+};
+
+class GmapProxyRotator {
+  constructor(proxies) {
+    this.proxies = proxies;
+    this.index   = 0;
+  }
+
+  get total() { return this.proxies.length; }
+
+  /**
+   * Returns the current proxy and advances the index for the next call.
+   * Use at the start of every job so each job gets a fresh proxy.
+   */
+  next() {
+    const proxy = this.proxies[this.index];
+    this.index  = (this.index + 1) % this.proxies.length;
+    return proxy;
+  }
+
+  /** Peek without advancing (useful for logging). */
+  get current() { return this.proxies[this.index] || null; }
+}
+
 module.exports = {
   rules,
-  getRandomInt
+  getRandomInt,
+  GMAP_PROXY_RULES,
+  loadGmapProxies,
+  GmapProxyRotator,
 };

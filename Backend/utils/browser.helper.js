@@ -73,6 +73,41 @@ const getBrowser = async () => {
 };
 
 /**
+ * Launch a short-lived, proxy-authenticated browser (NOT part of the shared pool).
+ * Used by Maps scraper jobs when GMAP proxies are configured.
+ * Caller is responsible for closing the returned browser.
+ *
+ * @param {{ host: string, port: string, username: string, password: string }} proxy
+ */
+const launchProxyBrowser = async (proxy) => {
+  logger.info(`🔒 Launching proxy browser: ${proxy.host}:${proxy.port}`);
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--disable-blink-features=AutomationControlled',
+      '--window-size=1280,800',
+      `--proxy-server=http://${proxy.host}:${proxy.port}`,
+    ],
+  });
+
+  // Pre-authenticate all new pages opened on this browser
+  browser.on('targetcreated', async (target) => {
+    try {
+      const p = await target.page();
+      if (p) await p.authenticate({ username: proxy.username, password: proxy.password });
+    } catch (_) {}
+  });
+
+  return browser;
+};
+
+/**
  * Manually close the browser (useful for graceful shutdown)
  */
 const closeBrowser = async () => {
@@ -97,4 +132,4 @@ const getBrowserStats = () => {
     };
 };
 
-module.exports = { getBrowser, closeBrowser, getBrowserStats };
+module.exports = { getBrowser, closeBrowser, getBrowserStats, launchProxyBrowser };

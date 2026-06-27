@@ -1,16 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, getMe } = require('../Controllers/auth.controller');
+const { register, login, getMe, getUsers, createUser, removeUser, changeUserRole } = require('../Controllers/auth.controller');
 const { validateRegister, validateLogin } = require('../middlewares/auth.validation');
-const { verifyToken } = require('../middlewares/auth.middleware');
+const { verifyToken, requireRole } = require('../middlewares/auth.middleware');
 
-// POST /api/auth/register
+// Public routes
 router.post('/register', validateRegister, register);
-
-// POST /api/auth/login
 router.post('/login', validateLogin, login);
 
-// GET /api/auth/me
+// Authenticated routes
 router.get('/me', verifyToken, getMe);
+
+// Admin / Super Admin only — user management
+const adminGuard = [verifyToken, requireRole('ADMIN', 'SUPER_ADMIN')];
+
+router.get('/users', ...adminGuard, getUsers);
+router.post('/users', ...adminGuard, validateRegister, createUser);
+router.delete('/users/:id', ...adminGuard, removeUser);
+router.patch('/users/:id/role', ...adminGuard, changeUserRole);
 
 module.exports = router;

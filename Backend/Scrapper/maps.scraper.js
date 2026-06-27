@@ -1,10 +1,17 @@
-const { getBrowser } = require('../utils/browser.helper');
+const { getBrowser, launchProxyBrowser } = require('../utils/browser.helper');
 const { prisma } = require('../config/db');
 const logger = require('../utils/logger');
-const { rules, getRandomInt } = require('../config/scraper.rules');
+const { rules, getRandomInt, loadGmapProxies, GmapProxyRotator, GMAP_PROXY_RULES } = require('../config/scraper.rules');
 const { parseAddress } = require('../utils/address.parser');
 const { sendNotificationEmail } = require('../Services/mail.service');
 const browserMonitor = require('../utils/browser.monitor');
+
+// Module-level rotator — persists across jobs so round-robin stays in sync
+const _gmapProxies = loadGmapProxies();
+const gmapRotator  = _gmapProxies.length > 0 ? new GmapProxyRotator(_gmapProxies) : null;
+if (gmapRotator) {
+  logger.info(`🔒 GMaps proxy pool ready: ${gmapRotator.total} proxies loaded (round-robin per job).`);
+}
 
 /**
  * Utility to pause execution
@@ -15,13 +22,21 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Background Google Maps Scraper
  */
 const runMapsScraper = async (query, scrapingJobId, leadType) => {
-  let browser = null;
-  let page = null;
-  try {
-    logger.info(`🗺️ Starting Google Maps scraper (Pooled Instance): "${query}"`);
+  let browser         = null;
+  let page            = null;
+  let dedicatedBrowser = null; // non-null only when we launched a proxy browser
 
-    // 🟠 POOLING: Get the shared browser instead of launching a new one
-    browser = await getBrowser();
+  try {
+    if (gmapRotator) {
+      const proxy = gmapRotator.next();
+      logger.info(`🗺️ Starting Google Maps scraper with proxy ${proxy.host}:${proxy.port} (${gmapRotator.total} in pool): "${query}"`);
+      dedicatedBrowser = await launchProxyBrowser(proxy);
+      browser = dedicatedBrowser;
+    } else {
+      logger.info(`🗺️ Starting Google Maps scraper (Pooled Instance): "${query}"`);
+      browser = await getBrowser();
+    }
+
     page = await browser.newPage();
     browserMonitor.trackPageOpen();
     
@@ -167,8 +182,73 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
             const phoneEl = document.querySelector('button[data-item-id^="phone:tel:"]');
             const phone = phoneEl ? phoneEl.innerText.trim() : null;
             
-            return { name, address, website, phone };
+            // Extract rating and reviews
+            let rating = null;
+            let reviews = null;
+            const f7niceText = document.querySelector('div.F7nice')?.textContent.trim();
+            if (f7niceText) {
+              const match = f7niceText.match(/([0-9]+(?:[.,][0-9]+)?)\s*\(?([\d,.\s]+)\)?/);
+              if (match) {
+                rating = parseFloat(match[1].replace(',', '.'));
+                const revNum = parseInt(match[2].replace(/[^\d]/g, ''), 10);
+                if (!isNaN(revNum)) reviews = revNum;
+              }
+            }
+            if (rating === null) {
+              const ratingEl = document.querySelector('span.MW4etd');
+              if (ratingEl) {
+                const num = parseFloat(ratingEl.textContent.trim().replace(',', '.'));
+                if (!isNaN(num)) rating = num;
+              }
+            }
+            if (reviews === null) {
+              const reviewAriaEl = document.querySelector('button[aria-label*="reviews"], span[aria-label*="reviews"]');
+              if (reviewAriaEl) {
+                const ariaLabel = reviewAriaEl.getAttribute('aria-label') || '';
+                const match = ariaLabel.match(/([\d,.]+)\s*reviews/i);
+                if (match) {
+                  const revNum = parseInt(match[1].replace(/[^\d]/g, ''), 10);
+                  if (!isNaN(revNum)) reviews = revNum;
+                }
+              }
+            }
+
+            // Extract last review snippet from overview page (if visible)
+            let lastReview = null;
+            const snippetTextEl = document.querySelector('.wiI7pd') || document.querySelector('.MyEned');
+            if (snippetTextEl) {
+              lastReview = snippetTextEl.textContent.trim();
+            }
+            
+            return { name, address, website, phone, rating, reviews, lastReview };
           });
+
+          // Attempt to click the reviews tab to load the detailed latest review with date
+          try {
+            const reviewTabBtn = await detailPage.$('button[aria-label*="reviews"], div.F7nice');
+            if (reviewTabBtn) {
+              await reviewTabBtn.click();
+              await sleep(2000); // Allow time for reviews panel to transition/load
+              
+              const reviewsInfo = await detailPage.evaluate(() => {
+                const reviewCard = document.querySelector('.jftiEf');
+                if (reviewCard) {
+                  const dateText = reviewCard.querySelector('.rsqaWe')?.textContent.trim() || '';
+                  const bodyText = reviewCard.querySelector('.wiI7pd')?.textContent.trim() || reviewCard.querySelector('.MyEned')?.textContent.trim() || '';
+                  if (dateText || bodyText) {
+                    return `${dateText} - ${bodyText}`.trim().replace(/^-\s*|\s*-$/g, '');
+                  }
+                }
+                return null;
+              });
+
+              if (reviewsInfo) {
+                leadData.lastReview = reviewsInfo;
+              }
+            }
+          } catch (clickErr) {
+            logger.warn(`Could not load detailed reviews tab: ${clickErr.message}`);
+          }
 
           if (leadData.name && leadData.address) {
             const uniqueKey = Buffer.from(`${leadData.name}-${leadData.address}`).toString('base64');
@@ -191,6 +271,9 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
                      website: leadData.website,
                      hasWebsite: !!leadData.website,
                      phone: leadData.phone,
+                     rating: leadData.rating,
+                     reviews: leadData.reviews,
+                     lastReview: leadData.lastReview,
                      keyword: query, 
                      leadType: leadType || null,
                      source: 'google_maps',
@@ -274,8 +357,12 @@ const runMapsScraper = async (query, scrapingJobId, leadType) => {
     }
   } finally {
     if (page) {
-      await page.close();
+      await page.close().catch(() => {});
       browserMonitor.trackPageClose();
+    }
+    // Only close if we launched a dedicated proxy browser — never close the shared pool
+    if (dedicatedBrowser) {
+      await dedicatedBrowser.close().catch(() => {});
     }
   }
 };

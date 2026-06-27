@@ -18,13 +18,21 @@ const verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded; // { userId, email, iat, exp }
+    req.user = decoded; // { userId, email, role, iat, exp }
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Unauthorized. Invalid token.' });
   }
 };
 
+const requireRole = (...roles) => (req, res, next) => {
+  if (!req.user || !roles.includes(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'Forbidden. Insufficient permissions.' });
+  }
+  next();
+};
+
 module.exports = {
-  verifyToken
+  verifyToken,
+  requireRole
 };

@@ -22,11 +22,16 @@ import UserProfiles from './pages/UserProfiles';
 import NotFound from './pages/OtherPage/NotFound';
 import Leads from './pages/Leads/Lead';
 import LeadDetail from './pages/Leads/LeadDetail';
+import GmapLeads from './pages/GmapLeads/GmapLeads';
+import GmapLeadsDetail from './pages/GmapLeadsDetail/GmapLeadsDetail';
 import Enrichment from './pages/Enrichment/Enrichment';
 import EnrichmentDetail from './pages/Enrichment/EnrichmentDetail';
 import EmailAutomation from './pages/EmailAutomation/EmailAutomation';
 import EmailAutomationDetail from './pages/EmailAutomation/EmailAutomationDetail';
-
+import TruckLeads from './pages/TruckLeads/TruckLeads';
+import TruckLeadsDetail from './pages/TruckLeads/TruckLeadsDetail';
+import Welcome from './pages/Welcome/Welcome';
+import UserManagement from './pages/UserManagement/UserManagement';
 
 
 function App() {
@@ -79,6 +84,9 @@ function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Home />} />
 
+          <Route path="/gmap-leads" element={<GmapLeads />} />
+          <Route path="/gmap-leads/:id" element={<GmapLeadsDetail />} />
+
 
 
           <Route path="/start-scraping" element={<Leads />} />
@@ -96,11 +104,18 @@ function App() {
 
           <Route path="/start-automation/:jobId" element={<EmailAutomationDetail />} />
 
+          <Route path="/truck-leads" element={<TruckLeads />} />
+          <Route path="/truck-leads/:jobId" element={<TruckLeadsDetail />} />
 
-
-
-
-
+          <Route path="/welcome" element={<Welcome />} />
+          <Route
+            path="/user-management"
+            element={
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                <UserManagement />
+              </ProtectedRoute>
+            }
+          />
 
         </Route>
 

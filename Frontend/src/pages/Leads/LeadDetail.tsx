@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle, Search, RefreshCw, BarChart3, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Users, Globe, MapPin, Building, Phone, Mail, Link as LinkIcon, CheckCircle2, Circle, Search, RefreshCw, BarChart3, AlertCircle, Download } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import useAuthStore from '../../stores/useAuthStore';
 
@@ -26,6 +26,9 @@ interface Lead {
   mapsScraped: boolean;
   keyword: string | null;
   createdAt: string;
+  rating?: number | null;
+  reviews?: number | null;
+  lastReview?: string | null;
 }
 
 interface JobStats {
@@ -104,6 +107,59 @@ const LeadDetail: React.FC = () => {
     }
   };
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const downloadCSV = async () => {
+    setIsDownloading(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/scraper/jobs/${jobId}/leads?page=1&limit=10000`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Failed to fetch leads for download');
+      const data = await response.json();
+      if (!data.success) throw new Error('Failed to fetch leads for download');
+
+      const allLeads: Lead[] = data.data;
+      const headers = [
+        'Name', 'Company', 'Owner Name', 'Email', 'Phone', 'Website', 'LinkedIn URL',
+        'Address', 'City', 'State', 'Country', 'Lead Type', 'Source', 'Status',
+        'Rating', 'Reviews', 'Last Review', 'Keyword',
+        'Maps Scraped', 'Email Extracted', 'Contacted', 'Created At'
+      ];
+
+      const escape = (val: string | number | boolean | null | undefined) => {
+        if (val == null) return '';
+        const str = String(val);
+        return str.includes(',') || str.includes('"') || str.includes('\n')
+          ? `"${str.replace(/"/g, '""')}"`
+          : str;
+      };
+
+      const rows = allLeads.map(l => [
+        l.name, l.company, l.ownerName, l.email, l.phone, l.website, l.linkedinUrl,
+        l.address, l.city, l.state, l.country, l.leadType, l.source, l.status,
+        l.rating, l.reviews, l.lastReview, l.keyword,
+        l.mapsScraped, l.emailExtracted, l.contacted, l.createdAt
+      ].map(escape).join(','));
+
+      const csv = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `batch-${jobId}-leads.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded ${allLeads.length} leads`);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to download CSV');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   useEffect(() => {
     if (token && jobId) {
       fetchLeads(1);
@@ -143,11 +199,20 @@ const LeadDetail: React.FC = () => {
                 className="w-full pl-9 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <button 
+            <button
               onClick={() => fetchLeads(1)}
               className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
             >
               <RefreshCw className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+            </button>
+            <button
+              onClick={downloadCSV}
+              disabled={isDownloading || leads.length === 0}
+              title="Download all leads as CSV"
+              className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              {isDownloading ? 'Downloading...' : 'CSV'}
             </button>
           </div>
         </div>
@@ -209,6 +274,7 @@ const LeadDetail: React.FC = () => {
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Business / Name</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Contact</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Location</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Reviews</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type / Status</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Keyword</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Journey</th>
@@ -217,13 +283,13 @@ const LeadDetail: React.FC = () => {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-sm text-gray-500">
                     Loading data...
                   </td>
                 </tr>
               ) : leads.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500">
                     No leads discovered for this batch yet.
                   </td>
                 </tr>
@@ -271,6 +337,22 @@ const LeadDetail: React.FC = () => {
                           {[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || 'N/A'}
                         </span>
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                       <div className="flex flex-col gap-1.5">
+                         {lead.rating ? (
+                           <div className="flex items-center gap-1 text-xs font-semibold text-yellow-500 dark:text-yellow-400">
+                             <span className="text-yellow-500">★</span> {lead.rating} <span className="text-[10px] text-gray-400 dark:text-gray-500 font-normal">({lead.reviews || 0} reviews)</span>
+                           </div>
+                         ) : (
+                           <span className="text-xs text-gray-400 dark:text-gray-600 italic">No reviews</span>
+                         )}
+                         {lead.lastReview && (
+                           <span className="text-[11px] text-gray-500 dark:text-gray-400 line-clamp-2 max-w-[200px]" title={lead.lastReview}>
+                             {lead.lastReview}
+                           </span>
+                         )}
+                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-2">
